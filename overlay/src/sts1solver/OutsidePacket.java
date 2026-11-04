@@ -269,6 +269,8 @@ final class OutsidePacket {
         c.shown=array(visible,"choices").size(); // Potion actions are not event buttons.
         c.hp=integer(game,"current_hp"); c.maxHp=integer(game,"max_hp"); c.gold=integer(game,"gold");
         c.ascension=integer(game,"ascension_level");
+        c.act=Math.max(1,optionalInt(game,"act",1));
+        try { c.value=HpValue.context(game); } catch(RuntimeException failure) { c.value=null; } // old HP rules
         if(c.event.equals("Knowing Skull"))c.skullGoldCost=skullGoldCost(c.skullGoldCost);
         for(JsonElement item:array(game,"deck")) {
             JsonObject card=item.getAsJsonObject();

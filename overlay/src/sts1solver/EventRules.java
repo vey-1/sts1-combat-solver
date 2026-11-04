@@ -78,6 +78,9 @@ final class EventRules {
         int tomeCost = UNKNOWN;
         /** Base price of the next shop removal (ShopScreen.purgeCost, public purge_base_cost). */
         int purgeCost = 75;
+        /** HpValue's future for this room and the act, for the real-HP rules (docs/hp-value.md, "事件"); null keeps the old rules. */
+        HpValue.Context value;
+        int act = 1;
         /** What readLive pre-read on this decision (event and values), for the decision note; null when nothing was read. */
         String preread;
     }
@@ -135,6 +138,27 @@ final class EventRules {
     static final int GOOP_GOLD_PER_HP = 3;
     static final int GOOP_DAMAGE = 11, GOOP_GOLD = 75;
 
+    /**
+     * Real-HP event rules (docs/hp-value.md, "事件"): what each reward is worth, in raw HP at PotionValue's typical
+     * situation, fitted to the player's A20 Ironclad event choices. Paying k HP is taken when its real cost here is no
+     * more than the reward's price (ties take, as with potions).
+     */
+    static final int GOLD_PER_HP = 10;
+    static final int RELIC = PotionValue.TOP, BOOK = PotionValue.HIGH, COLORLESS_CARD = PotionValue.MID;
+    /** Shining Light: per target the upgrade grid ranks highly, per other target, and both targets when not pre-read. */
+    static final int WORTHY_UPGRADE = PotionValue.HIGHER, OTHER_UPGRADE = PotionValue.LOW, UNREAD_LIGHT = PotionValue.HIGH;
+    static final int SKULL_GOLD = 90, SKULL_LEAVE = 6;
+
+    /** Real cost of paying k HP now. */
+    static double paid(Context c, int k) { return HpValue.cost(k, c.hp, c.value); }
+
+    /** Price of a reward worth {@code raw} HP at the typical situation of this act. */
+    static double worth(Context c, int raw) { return PotionValue.tierPrice(raw, PotionValue.stage(c.act)); }
+
+    private static String real(double cost, double price) {
+        return String.format(java.util.Locale.ROOT, "真实代价 %.1f / 值 %.1f", cost, price);
+    }
+
     /** Null means "no rule: ask the network". */
     /** Ruby Key: smith first, recall only at the second-to-last campfire (or the last one). {@code left} counts the
      * campfires still ahead on the shortest route. Decision index is -1 (network picks) with recall avoided until then. */
@@ -151,6 +175,15 @@ final class EventRules {
             case "Knowing Skull":
                 if (n != 4) return null;
                 // potion 0, gold 1 (90), card 2, leave 3; every option and leaving cost HP.
+                if (c.value != null) {
+                    // Leaving costs SKULL_LEAVE afterwards either way: price only the extra HP this take adds.
+                    int k = c.skullGoldCost;
+                    double cost = HpValue.cost(k + SKULL_LEAVE, c.hp, c.value) - HpValue.cost(SKULL_LEAVE, c.hp, c.value);
+                    double price = worth(c, SKULL_GOLD / GOLD_PER_HP);
+                    return c.hp - k - SKULL_LEAVE > 0 && cost <= price
+                        ? pick(1, "全知头骨：付 " + k + " 血拿 90 金币（" + real(cost, price) + "）")
+                        : pick(3, "全知头骨：再付 " + k + " 血不值（" + real(cost, price) + "），离开");
+                }
                 return c.hp - c.skullGoldCost >= .7 * c.maxHp && c.skullGoldCost <= 7
                     ? pick(1, "全知头骨：付 " + c.skullGoldCost + " 血后仍充足，拿金币") : pick(3, "全知头骨：离开");
             case "Colosseum":
@@ -163,6 +196,18 @@ final class EventRules {
             case "Shining Light": {
                 if (n != 2) return null;
                 int damage = Math.round(c.maxHp * (c.ascension >= 15 ? .3f : .2f));
+                if (c.value != null) {
+                    int left = c.hp - damage;
+                    if (left <= 0) return pick(1, "闪耀之光：失 " + damage + " 血会致死，离开");
+                    if (c.danger != null && c.danger.high(left)) return pick(1, "闪耀之光：" + c.danger.describe(left) + "，离开");
+                    int targets = c.lightTargets == null ? 2 : c.lightTargets.length, raw = UNREAD_LIGHT;
+                    if (c.worthyUpgrades != UNKNOWN)
+                        raw = WORTHY_UPGRADE * c.worthyUpgrades + OTHER_UPGRADE * Math.max(0, targets - c.worthyUpgrades);
+                    double cost = paid(c, damage), price = worth(c, raw);
+                    String what = c.worthyUpgrades == UNKNOWN ? "升级两张牌" : c.worthyUpgrades + " 张预读牌值得升级";
+                    return cost <= price ? pick(0, "闪耀之光：" + what + "，失 " + damage + " 血（" + real(cost, price) + "），进入")
+                        : pick(1, "闪耀之光：" + what + "，失 " + damage + " 血不值（" + real(cost, price) + "），离开");
+                }
                 if (c.worthyUpgrades != UNKNOWN && c.danger != null) {
                     int left = c.hp - damage;
                     if (left <= 0) return pick(1, "闪耀之光：失 " + damage + " 血会致死，离开");
@@ -198,6 +243,12 @@ final class EventRules {
                 return n == 2 ? pick(1, MANUAL + "：AI 大牌组打法不适配，拒绝幽灵") : null;
             case "Scrap Ooze":
                 if (n != 2 || c.oozeLoss == UNKNOWN) return null;
+                if (c.value != null) {
+                    double cost = paid(c, c.oozeLoss), price = worth(c, RELIC);
+                    return c.oozeLoss > 0 && c.hp - c.oozeLoss > 0 && cost <= price
+                        ? pick(0, "废料软泥：预读 " + c.oozeLoss + " 血得遗物（" + real(cost, price) + "）")
+                        : pick(1, "废料软泥：预读 " + c.oozeLoss + " 血得遗物不值（" + real(cost, price) + "），离开");
+                }
                 return c.oozeLoss > 0 && c.oozeLoss <= 25 && c.hp - c.oozeLoss >= 10
                     ? pick(0, "废料软泥：预读 " + c.oozeLoss + " 血内得遗物") : pick(1, "废料软泥：预读得不偿失，离开");
             case "Dead Adventurer":
@@ -236,6 +287,15 @@ final class EventRules {
             case "Big Fish":
                 return n == 3 ? (healthy(c, .55) ? pick(1, "大鱼：甜甜圈 +5 最大血") : pick(0, "大鱼：香蕉回血")) : null;
             case "World of Goop":
+                if (n == 2 && c.goopLoss != UNKNOWN && c.value != null) {
+                    int left = c.hp - GOOP_DAMAGE, swing = (c.ectoplasm ? 0 : GOOP_GOLD) + c.goopLoss;
+                    if (left <= 0) return pick(1, "泥坑：失 11 血会致死，离开（失 " + c.goopLoss + " 金币）");
+                    if (c.danger != null && c.danger.high(left))
+                        return pick(1, "泥坑：" + c.danger.describe(left) + "，离开（失 " + c.goopLoss + " 金币）");
+                    double cost = paid(c, GOOP_DAMAGE), price = worth(c, swing / GOLD_PER_HP);
+                    return cost <= price ? pick(0, "泥坑：金币差 " + swing + "，收集金币（" + real(cost, price) + "）")
+                        : pick(1, "泥坑：金币差 " + swing + " 不值 11 血（" + real(cost, price) + "），离开");
+                }
                 if (n == 2 && c.goopLoss != UNKNOWN && c.danger != null) {
                     // gather 0: +75 gold (none with Ectoplasm), lose 11 HP; leave 1: lose goopLoss gold
                     int left = c.hp - GOOP_DAMAGE, swing = (c.ectoplasm ? 0 : GOOP_GOLD) + c.goopLoss;
@@ -279,6 +339,12 @@ final class EventRules {
                 // read 0, leave 1; on the last page take 0 (10, A15+ 15 HP, the book) or stop 1 (3 HP). Pages 1-3 have one button.
                 // Necronomicon brings Necronomicurse, so it is refused like every curse offer.
                 if (n != 2) return null;
+                if (c.value != null && c.tomeBook != null && !c.tomeBook.equals("Necronomicon") && c.tomeCost != UNKNOWN) {
+                    double cost = paid(c, c.tomeCost), price = worth(c, BOOK);
+                    return c.hp > c.tomeCost && cost <= price
+                        ? pick(0, "诅咒之书：预读到 " + c.tomeBook + "，读完还要 " + c.tomeCost + " 血（" + real(cost, price) + "），读")
+                        : pick(1, "诅咒之书：预读到 " + c.tomeBook + "，" + c.tomeCost + " 血不值（" + real(cost, price) + "），不读");
+                }
                 if (c.tomeBook != null && !c.tomeBook.equals("Necronomicon") && c.tomeCost != UNKNOWN && c.hp > c.tomeCost)
                     return pick(0, "诅咒之书：预读到 " + c.tomeBook + "，读完还要 " + c.tomeCost + " 血，读");
                 return pick(1, c.tomeBook == null ? "诅咒之书：不读，不赌随机书"
@@ -298,6 +364,20 @@ final class EventRules {
                 if (n != 3) return null;
                 if (c.sensoryWants == UNKNOWN)
                     return healthy(c, .6) ? pick(2, "感知石：血量够，拿三张无色牌") : pick(0, "感知石：血量不足，只拿一张");
+                if (c.value != null) {
+                    // The last wanted group whose HP is worth the wanted cards it brings (groups 2..k, one card each).
+                    int best = 1, wanted = 0;
+                    double bestCost = 0, bestPrice = 0;
+                    for (int k = 2; k <= 3; k++) {
+                        if ((c.sensoryWants >> (k - 1) & 1) == 0) continue;
+                        wanted++;
+                        double cost = paid(c, SENSORY_COST[k]), price = worth(c, COLORLESS_CARD * wanted);
+                        if (c.hp > SENSORY_COST[k] && cost <= price) { best = k; bestCost = cost; bestPrice = price; }
+                    }
+                    return best == 1 ? pick(0, "感知石：后两组没有值得付血的牌，只拿第一组")
+                        : pick(best - 1, "感知石：预读想要第 " + best + " 组的牌，付 " + SENSORY_COST[best] + " 血拿 " + best
+                            + " 组（" + real(bestCost, bestPrice) + "）");
+                }
                 // The last wanted group among the tiers whose HP loss is not lethal; no other HP floor.
                 int tier = 1;
                 for (int k = 2; k <= 3; k++) if ((c.sensoryWants >> (k - 1) & 1) != 0 && c.hp > SENSORY_COST[k]) tier = k;

@@ -246,7 +246,112 @@ public final class EventRulesCheck {
 
         packetChecks(args[0]);
         dangerChecks(args[0]);
+        realHpChecks(args[0]);
         System.out.println("PASS: event rules and removal order");
+    }
+
+    /** An act 2 event in PotionValue's typical situation: there the real cost of k HP is the price of a k-HP reward. */
+    static EventRules.Context priced(String event, int shown, int hp) {
+        EventRules.Context c = c(event, shown, hp, 80, 100);
+        c.ascension = 20; c.act = 2; c.value = PotionValue.typical(1);
+        return c;
+    }
+
+    static String note(EventRules.Context c) {
+        return EventRules.decide(c).note;
+    }
+
+    /** docs/hp-value.md, "事件": rewards priced in real HP. Expected costs come from the spec's typical situation. */
+    static void realHpChecks(String fixturePath) throws Exception {
+        // Knowing Skull: 90 gold is worth 9 HP. The extra cost of a take is priced on top of the 6 HP leave.
+        EventRules.Context skull = priced("Knowing Skull", 4, 56);
+        check(index(skull) == 1 && note(skull).contains("真实代价 2.6 / 值 3.9"), "skull: 6 HP for 90 gold at 56/80");
+        skull.skullGoldCost = 9;
+        check(index(skull) == 1, "skull: the fourth take (9 HP) ties its price and is taken");
+        skull.skullGoldCost = 10;
+        check(index(skull) == 3, "skull: 10 HP is more than 90 gold is worth");
+        skull.skullGoldCost = 6; skull.hp = 32;
+        check(index(skull) == 3, "skull: at 32/80 the 6 HP fall under 30% max HP and cost 5.6");
+        skull.hp = 12;
+        check(index(skull) == 3, "skull: never ends at 0 HP after leaving");
+        check(index(priced("Knowing Skull", 4, 60)) == 1, "skull: old rule left at 60/80 (under 70% after paying), real HP takes");
+
+        // Shining Light, A20 80 max HP: 24 HP. Two targets worth upgrading = 32, one = 16 + 5, none = 10, unread = 22.
+        EventRules.Context light = priced("Shining Light", 2, 56);
+        light.worthyUpgrades = 2;
+        check(index(light) == 0 && note(light).contains("真实代价 10.5 / 值 14.0"), "light: two worthy upgrades for 24 HP");
+        light.worthyUpgrades = 1;
+        check(index(light) == 1, "light: one worthy upgrade (21) is not worth 24 HP");
+        light.worthyUpgrades = EventRules.UNKNOWN;
+        check(index(light) == 1, "light: unread (22) is not worth 24 HP at 56/80");
+        light.worthyUpgrades = 2; light.hp = 40;
+        check(index(light) == 1, "light: at 40/80 the light ends under 30% max HP and costs 16.5");
+        light.hp = 24;
+        check(index(light) == 1, "light: never lethal");
+        light.hp = 56; light.danger = new DangerAhead(2, 1, 1, 0, false);
+        check(index(light) == 1, "light: high danger on the route still vetoes");
+        light.danger = new DangerAhead(2, 1, 0, 0, false);
+        check(index(light) == 0, "light: low danger, priced rule");
+
+        // Scrap Ooze: a relic is worth 32 HP.
+        EventRules.Context ooze = priced("Scrap Ooze", 2, 56);
+        ooze.oozeLoss = 30;
+        check(index(ooze) == 0, "ooze: 30 HP for a relic (13.1 against 14.0); the old rule stopped at 25");
+        ooze.oozeLoss = 33;
+        check(index(ooze) == 1, "ooze: 33 HP ends under 30% max HP and costs 15.2");
+        ooze.oozeLoss = 10; ooze.hp = 30;
+        check(index(ooze) == 0, "ooze: 10 HP from 30/80 costs 7.4, still worth a relic");
+
+        // World of Goop: 75 gold plus the gold leaving would lose, at 10 gold per HP, against 11 HP.
+        EventRules.Context goop = priced("World of Goop", 2, 56);
+        goop.goopLoss = 40;
+        check(index(goop) == 0, "goop: 115 gold is worth 11 HP (tie)");
+        goop.goopLoss = 30;
+        check(index(goop) == 1, "goop: 105 gold is worth 10 HP, less than 11");
+        goop.goopLoss = 75; goop.hp = 30;
+        check(index(goop) == 1, "goop: from 30/80 the 11 HP cost 8.6, more than 150 gold (6.6)");
+        goop.hp = 56; goop.ectoplasm = true; goop.goopLoss = 40;
+        check(index(goop) == 1, "goop: Ectoplasm, 40 gold is worth 4 HP");
+
+        // Cursed Tome: a book (not the Necronomicon) is worth 22 HP.
+        EventRules.Context tome = priced("Cursed Tome", 2, 56);
+        tome.tomeBook = "Enchiridion"; tome.tomeCost = 21;
+        check(index(tome) == 0, "tome: 21 HP for a book");
+        tome.tomeCost = 23;
+        check(index(tome) == 1, "tome: 23 HP is more than a book");
+        tome.tomeCost = 21; tome.hp = 40;
+        check(index(tome) == 1, "tome: from 40/80 the 21 HP cost 12.9");
+        tome.hp = 56; tome.tomeBook = "Necronomicon";
+        check(index(tome) == 1, "tome: Necronomicon is still refused");
+
+        // Sensory Stone (act 3): each wanted colorless card is worth 10 HP; 5 HP for group 2, 10 for group 3.
+        EventRules.Context stone = priced("SensoryStone", 3, 56);
+        stone.act = 3; stone.sensoryWants = 0b110;
+        check(index(stone) == 2, "stone: groups 2 and 3 wanted, 10 HP for two cards");
+        stone.sensoryWants = 0b100;
+        check(index(stone) == 2, "stone: only group 3 wanted, 10 HP for one card (tie)");
+        stone.sensoryWants = 0b110; stone.hp = 26;
+        check(index(stone) == 0, "stone: at 26/80 neither 5 HP (4.4) nor 10 HP (10.4) is worth it");
+        stone.sensoryWants = 0b000; stone.hp = 56;
+        check(index(stone) == 0, "stone: nothing wanted, first group only");
+
+        // The join: OutsidePacket reads HpValue's context from the exported state, so the priced rule runs end to end.
+        JsonObject fixture;
+        try (InputStreamReader reader = new InputStreamReader(new FileInputStream(fixturePath), StandardCharsets.UTF_8)) {
+            fixture = new JsonParser().parse(reader).getAsJsonObject();
+        }
+        Distill2 model = Distill2.load();
+        JsonObject withContext = copy(fixture);
+        JsonObject auto = new JsonObject();
+        auto.addProperty("y", 5); auto.addProperty("room", "EventRoom");
+        withContext.getAsJsonObject("state").getAsJsonObject("game_state").add("solver_auto_context", auto);
+        withContext.getAsJsonObject("state").getAsJsonObject("game_state").addProperty("act", 2);
+        OutsidePacket skullPacket = event(model, withContext, "Knowing Skull", 60, 80, 4);
+        check(skullPacket.policyScore().best == 1 && skullPacket.ruleNote.contains("真实代价"),
+            "packet: with the auto context the Skull is priced in real HP: " + skullPacket.ruleNote);
+        OutsidePacket oldSkull = event(model, fixture, "Knowing Skull", 60, 80, 4);
+        check(oldSkull.policyScore().best == 3 && !oldSkull.ruleNote.contains("真实代价"),
+            "packet: without it the old 70% rule leaves: " + oldSkull.ruleNote);
     }
 
     /** Card pre-reads (CardWant verdicts in sensoryWants / cardsWanted); UNKNOWN is the live-off or failed read: old rules. */
