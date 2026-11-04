@@ -91,9 +91,71 @@ public final class HpValueCheck {
         System.out.println("PASS: fights left from the game state (table, Boss room, A20 act 3, act 4, final act, off the map)");
 
         JsonArray table = HpValue.export(game("{" + base + "\"act\":1,\"solver_auto_context\":{\"room\":\"MonsterRoomBoss\",\"y\":15}}"));
-        check(table.size() == 61 && table.get(0).getAsDouble() == 0.0 && table.get(20).getAsDouble() == 5.0
-            && table.get(60).getAsDouble() == 15.0, "export: one entry per HP from 0 to current, Boss weight 1/4");
+        check(table.size() == 60 && table.get(0).getAsDouble() == 0.0 && table.get(20).getAsDouble() == 5.0
+            && table.get(59).getAsDouble() == 14.75, "export: one entry per living loss, 0..current HP - 1, Boss weight 1/4");
         check(HpValue.export(game("{\"max_hp\":80,\"act\":1}")) == null, "export: nothing without context");
-        System.out.println("PASS: solver_hp_cost export has entries 0..current HP and is omitted without context");
+        System.out.println("PASS: solver_hp_cost export has entries 0..current HP - 1 and is omitted without context");
+
+        boundaries();
+    }
+
+    /** docs/hp-value.md, "边界": each boundary at its value and just past it. */
+    static void boundaries() {
+        HpValue.Context typical = PotionValue.typical(1); // act 2: 80 max HP, A20, Burning Blood, 4 fights left
+        // Loss: nothing lost costs nothing; at or past the HP held is death, max HP + 20.
+        check(HpValue.cost(0, 56, typical) == 0.0 && HpValue.cost(-3, 56, typical) == 0.0, "no loss costs 0");
+        check(HpValue.cost(56, 56, typical) == 100.0 && HpValue.cost(70, 56, typical) == 100.0, "losing all HP is death: 100");
+        example("one HP short of death, the dead-line rule", 55, 56, typical, 54.8125);
+        // A line the assumed damage kills gets no victory heal: 10 -> 2 HP, then 6 damage. Before V1 it healed back (9.5).
+        example("a line dead in a later fight stays dead", 8, 10, typical, 23.0);
+        // Low HP: below 30% of max HP (24 of 80), not at it.
+        example("ending exactly at 30% is not low HP", 8, 32, typical, 3.5);
+        example("one HP under 30% counts 4 times", 9, 32, typical, 4.6875);
+        // Healing now is capped at max HP; healing held for later (Blood Potion) is not capped by the HP missing now.
+        check(HpValue.gain(30, 70, typical) == HpValue.cost(10, 80, typical) && HpValue.gain(30, 70, typical) == 4.375,
+            "gain: 30 from 70/80 heals 10");
+        check(HpValue.gain(5, 80, typical) == 0.0 && HpValue.gain(-5, 40, typical) == 0.0, "gain: nothing at max HP or for a negative heal");
+        example("reserve: 16 held at 10 HP is worth losing 16 from 26", 16, 26, typical, HpValue.reserve(16, 10, typical));
+        check(HpValue.reserve(16, 10, typical) == 17.5 && HpValue.reserve(16, 10, typical) < HpValue.death(typical),
+            "reserve at low HP is finite, not death");
+        System.out.println("PASS: boundaries: zero and negative loss, death (max HP + 20), dead lines stay dead, the 30% edge, gain capped, reserve");
+
+        // Over a grid of situations: nothing alive costs more than death, and the cost never falls as the loss grows,
+        // except with Meat on the Bone, whose heal below half HP can make a bigger loss cheaper (worked example E10).
+        int cases = 0;
+        int[][] futures = {{}, {13}, {4, 4, 4, 13}, {6, 6, 6, 6, 6, 9}, {6, 11, 11}, {69}};
+        String[][] relicSets = {{}, {"Burning Blood"}, {"Black Blood", "Meat on the Bone", "Magic Flower"}, {"Mark of the Bloom"}};
+        for (int maxHp : new int[]{40, 80, 200}) for (int[] future : futures) for (String[] r : relicSets)
+            for (int ascension : new int[]{4, 20}) for (boolean transition : new boolean[]{true, false}) {
+                HpValue.Context c = new HpValue.Context(maxHp, ascension, future, transition, relics(r));
+                boolean meat = c.relics.contains("Meat on the Bone");
+                for (int hp = 1; hp <= maxHp; hp++) {
+                    double previous = 0;
+                    for (int k = 0; k <= hp + 1; k++) {
+                        double v = HpValue.cost(k, hp, c);
+                        check((meat || v >= previous - 1e-9) && v <= HpValue.death(c) + 1e-9,
+                            "monotone and capped: max " + maxHp + " hp " + hp + " k " + k + " = " + v);
+                        previous = v; cases++;
+                    }
+                }
+            }
+        // The exception is real: from 56/80 in act 2, losing 3 HP is cheaper than losing 2 with Meat on the Bone.
+        HpValue.Context meat = new HpValue.Context(80, 20, new int[]{6, 6, 6, 6, 6, 9}, true,
+            relics("Black Blood", "Meat on the Bone", "Magic Flower"));
+        boolean dip = false;
+        for (int k = 1; k < 56; k++) dip |= HpValue.cost(k, 56, meat) < HpValue.cost(k - 1, 56, meat);
+        check(dip, "Meat on the Bone makes some bigger losses cheaper");
+        System.out.println("PASS: cost never exceeds death, and never falls as the loss grows except with Meat on the Bone (" + cases + " cases)");
+
+        // Missing key inputs: unknown, so callers keep their old rules. Missing row and relics have defaults.
+        check(HpValue.context(game("{\"max_hp\":80,\"current_hp\":60,\"act\":1,\"solver_auto_context\":{\"y\":3}}")) == null,
+            "no ascension: unknown");
+        check(HpValue.context(game("{\"current_hp\":60,\"ascension_level\":20,\"act\":1,\"solver_auto_context\":{\"y\":3}}")) == null,
+            "no max HP: unknown");
+        check(HpValue.context(game("{\"max_hp\":80,\"current_hp\":60,\"ascension_level\":20,\"solver_auto_context\":{\"y\":3}}")) == null,
+            "no act: unknown");
+        HpValue.Context bare = HpValue.context(game("{\"max_hp\":80,\"current_hp\":60,\"ascension_level\":20,\"act\":1,\"solver_auto_context\":{}}"));
+        check(bare != null && bare.relics.isEmpty() && bare.future.length == 7, "no row and no relics: defaults (7 fights, none)");
+        System.out.println("PASS: missing max HP, act or ascension is unknown; a missing row or relic list uses defaults");
     }
 }

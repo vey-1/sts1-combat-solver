@@ -115,12 +115,12 @@ final class PotionValue {
         return t == null ? UNKNOWN : t[column];
     }
 
-    /** Blood Potion: the real cost of the HP it heals, here and now; its heal is already in the drinking line's loss. */
+    /** Blood Potion: the value of the HP it heals, held for later (HpValue.reserve); its heal is already in the drinking line's loss. */
     static Double bloodPrice(JsonObject game) {
         HpValue.Context c = HpValue.context(game);
         if (c == null || !game.has("current_hp")) return null;
         int heal = c.maxHp * (c.relics.contains("SacredBark") ? 40 : 20) / 100;
-        return HpValue.cost(heal, game.get("current_hp").getAsInt(), c);
+        return HpValue.reserve(heal, game.get("current_hp").getAsInt(), c);
     }
 
     /** Smoke Bomb escape: the bomb's own tier, plus the rewards an escape gives up (an elite's relic; a hallway or event fight's card and gold). */

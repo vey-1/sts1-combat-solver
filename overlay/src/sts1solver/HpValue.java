@@ -23,6 +23,8 @@ final class HpValue {
     /** Fights left in the act, Boss included, by floors to the Boss (index 1..15). Same 144 runs. */
     static final int[] FIGHTS_LEFT = {0, 1, 1, 2, 2, 3, 3, 4, 4, 4, 5, 5, 6, 6, 6, 7};
     static final int BOSS_ROW = 15;
+    /** Dying costs the same as a used revival in the potion recommendation (auto_policy.score): max HP + 20. */
+    static final int DEATH_EXTRA = 20;
 
     private HpValue() {}
 
@@ -62,31 +64,62 @@ final class HpValue {
         return c.ascension >= 5 ? 0.25 : 0.0;
     }
 
-    /** Real cost of ending this fight k HP lower than hp; hp already includes this fight's victory heal. */
+    /** Price of dying: losing at least the HP held. */
+    static double death(Context c) {
+        return c.maxHp + DEATH_EXTRA;
+    }
+
+    /**
+     * Real cost of ending this fight k HP lower than hp; hp already includes this fight's victory heal.
+     * Boundaries (docs/hp-value.md, "边界"): k <= 0 costs 0; k >= hp is death; no living loss costs more than death;
+     * exactly RISK_KNEE x max HP is not low HP.
+     */
     static double cost(int k, int hp, Context c) {
         if (k <= 0) return 0.0;
+        if (k >= hp) return death(c);
         int a = Math.min(hp, c.maxHp), b = a - k;
         double low = RISK_KNEE * c.maxHp, gaps = 0;
         for (int damage : c.future) {
             double below = b < low ? Math.max(0, Math.min(a, low) - b) : 0;
             gaps += Math.max(0, a - b) + (RISK_WEIGHT - 1) * below;
             a -= damage; b -= damage;
-            a = Math.min(c.maxHp, a + relicHeal(c.relics, a, c.maxHp));
-            b = Math.min(c.maxHp, b + relicHeal(c.relics, b, c.maxHp));
+            // A line the assumed damage kills stays dead: no victory heal below 1 HP.
+            if (a > 0) a = Math.min(c.maxHp, a + relicHeal(c.relics, a, c.maxHp));
+            if (b > 0) b = Math.min(c.maxHp, b + relicHeal(c.relics, b, c.maxHp));
         }
         Double after = c.transition ? transitionKeep(c) * Math.max(0, a - b) : null;
-        if (c.future.length == 0) return after == null ? 0.0 : after;
+        if (c.future.length == 0) return Math.min(death(c), after == null ? 0.0 : after);
         double inAct = gaps / c.future.length;
         // Not rounded: a saving exactly at a potion tier threshold must stay an exact tie with its price.
-        return LAMBDA * inAct + (1 - LAMBDA) * (after == null ? inAct : after);
+        // The low-HP weight adds up over the fights left, so a line left at a few HP could exceed death without the cap.
+        return Math.min(death(c), LAMBDA * inAct + (1 - LAMBDA) * (after == null ? inAct : after));
     }
 
-    /** The future of the current fight, read from the exported game state; null when the state lacks it. */
+    /** Value of healing h HP from hp: the cost of being that much lower, with the heal capped at max HP. */
+    static double gain(int h, int hp, Context c) {
+        int healed = Math.max(0, Math.min(h, c.maxHp - hp));
+        return cost(healed, hp + healed, c);
+    }
+
+    /**
+     * Value of holding h HP of healing for later (Blood Potion): the cost of being h lower than hp + h, without capping
+     * the heal at the HP missing now; above max HP the cost is measured from max HP.
+     */
+    static double reserve(int h, int hp, Context c) {
+        return cost(Math.max(0, h), hp + Math.max(0, h), c);
+    }
+
+    /**
+     * The future of the current fight, read from the exported game state. Null ("unknown": callers keep their old
+     * rules) when a key input is missing: max HP, act, ascension or the auto context. The map row and the relics have
+     * defaults: an unknown row counts the most fights left, missing relics count as none.
+     */
     static Context context(JsonObject game) {
-        if (!game.has("solver_auto_context") || !game.has("max_hp") || !game.has("act")) return null;
+        if (!game.has("solver_auto_context") || !game.has("max_hp") || !game.has("act")
+            || !game.has("ascension_level")) return null;
         JsonObject auto = game.getAsJsonObject("solver_auto_context");
         int act = Math.max(1, Math.min(4, game.get("act").getAsInt()));
-        int ascension = game.has("ascension_level") ? game.get("ascension_level").getAsInt() : 0;
+        int ascension = game.get("ascension_level").getAsInt();
         boolean bossRoom = "MonsterRoomBoss".equals(string(auto, "room"));
         int bossesLeft = auto.has("boss_candidates_remaining") ? auto.get("boss_candidates_remaining").getAsInt() : 1;
         boolean finalAct = game.has("solver_final_act") && game.get("solver_final_act").getAsBoolean();
@@ -117,13 +150,16 @@ final class HpValue {
         return new Context(game.get("max_hp").getAsInt(), ascension, future, transition, relics);
     }
 
-    /** solver_hp_cost: entry k is the real cost of ending this fight k HP below current HP; null when unknown. */
+    /**
+     * solver_hp_cost: entry k is the real cost of ending this fight k HP below current HP, for the losses that leave
+     * the player alive (k = 0 .. current HP - 1); null when unknown. Death is not listed: a won line never ends at 0.
+     */
     static JsonArray export(JsonObject game) {
         Context c = context(game);
         if (c == null || !game.has("current_hp")) return null;
         int hp = game.get("current_hp").getAsInt();
         JsonArray out = new JsonArray();
-        for (int k = 0; k <= Math.max(0, hp); k++) out.add(new JsonPrimitive(cost(k, hp, c)));
+        for (int k = 0; k < Math.max(1, hp); k++) out.add(new JsonPrimitive(cost(k, hp, c)));
         return out;
     }
 
