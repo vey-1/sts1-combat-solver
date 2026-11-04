@@ -20,7 +20,7 @@ import java.util.Set;
 public final class PolicyBoundaryCheck {
     /** Decision code. DecisionContext is left out: its only Foresight use is the bright_eye_mode flag in recording metadata. */
     static final String[] POLICY = {"OutsidePacket", "Distill2", "RoutePlanner", "EventRules", "RelicScore", "PotionRewards",
-        "CardWant", "PrereadCheck", "MatchGameRule", "DangerAhead"};
+        "CardWant", "PrereadCheck", "MatchGameRule", "DangerAhead", "HpValue", "PotionValue"};
     /** Sandbox only isolates the RNG streams and pools; EventRules' allow-listed card pre-reads replay the room inside one. */
     static final java.util.Map<String, String> ALLOWED = java.util.Collections.singletonMap("EventRules.java", "Sandbox");
     /** Display-only classes and members that carry beyond-SL information. */

@@ -1,6 +1,8 @@
 """Explainable potion choice over replay-validated routes, never executable commands."""
 from collections import deque
 
+from recovery import boss_heal_weight, effective_loss
+
 
 def key(value):
     return ''.join(c for c in value.lower() if c.isalnum())
@@ -86,6 +88,19 @@ def smoke_probe_keeps(plan, game):
             and max(0, game['current_hp'] - plan['hp']) < threshold)
 
 
+def potion_price_table(game):
+    """solver_potion_price from the Mod's PotionValue (docs/hp-value.md), or None when missing or malformed.
+
+    One entry per game['potions'] slot: a price in real HP, or None (empty slot, Fairy, Fruit Juice, Smoke Bomb).
+    """
+    table = game.get('solver_potion_price')
+    if (not isinstance(table, list) or len(table) != len(game.get('potions', []))
+            or not all(v is None or (isinstance(v, (int, float)) and not isinstance(v, bool) and v >= 0)
+                       for v in table)):
+        return None
+    return table
+
+
 def recommend(game, branches):
     profile = assess_deck(game)
     fallback = next((b for b in branches if b.get('available') and b.get('smoke_stop_loss')
@@ -117,14 +132,21 @@ def recommend(game, branches):
               'Dexterity Potion', 'Strength Potion', 'PowerPotion',
               'SkillPotion', 'AttackPotion', 'ColorlessPotion', 'EntropicBrew', 'SneckoOil'}
 
-    # The next act heals 75% of missing HP after this Boss (A5+; full below), so only the rest counts.
-    hp_weight = (.25 if game.get('ascension_level', 20) >= 5 else 0) if context.get('boss_heal') is True else 1
+    hp_weight = boss_heal_weight(game)
     heal_note = {1: '', .25: '；首领战后回血，战损按 1/4 计', 0: '；首领战后回满血，战损不计'}[hp_weight]
+
+    prices = potion_price_table(game)
 
     def price(branch):
         total = 0
         for use in branch.get('potion_uses', []):
             potion = potions[use['slot']]['id']
+            free_slot = branch.get('empty_potion_slots', 0) > 0
+            if prices is not None and prices[use['slot']] is not None:
+                # The tier already holds "keep it for a hard fight", so no reserve surcharge here.
+                refill = (guaranteed or (supply and full)) and free_slot
+                total += prices[use['slot']] * (.5 if refill else 1)
+                continue
             valuable = potion in strong or (potion == 'Ancient Potion' and game.get('act') == 2)
             covers_gap = ((potion in {'Fire Potion', 'SteroidPotion', 'Energy Potion'} and '爆发不足' in profile['weaknesses'])
                           or (potion == 'Explosive Potion' and '群攻不足' in profile['weaknesses'])
@@ -134,7 +156,6 @@ def recommend(game, branches):
             # Strength/Dexterity even when the next drop is likely to be wasted.
             # A consumed bottle creates a real slot. A guaranteed refill lowers its
             # reserve cost even when the deck screen recommends keeping that type.
-            free_slot = branch.get('empty_potion_slots', 0) > 0
             top = potion in premium
             if guaranteed and free_slot:
                 total += 8 if top else 5 if valuable else 3
@@ -148,12 +169,12 @@ def recommend(game, branches):
 
     def score(b):
         # A winning line consuming a revival is not equivalent to preserving it.
-        return b['loss'] * hp_weight + price(b) + (game.get('max_hp', 80) + 20) * (bool(b.get('used_tail')) + b.get('used_fairy', 0))
+        return effective_loss(game, b) + price(b) + (game.get('max_hp', 80) + 20) * (bool(b.get('used_tail')) + b.get('used_fairy', 0))
 
     chosen = min(winners, key=lambda b: (score(b), b['loss'], len(b.get('potion_uses', []))))
     saved = round(baseline['loss'] - chosen['loss'], 1) if baseline else None
     if chosen.get('potion_uses'):
-        reason = '无药未找到胜线，优先保命' if baseline is None else f'省 {saved:g} 血；用药门槛 {price(chosen)}'
+        reason = '无药未找到胜线，优先保命' if baseline is None else f'省 {saved:g} 血；用药门槛 {price(chosen):g}'
         if baseline is not None: reason += heal_note
         if guaranteed and chosen.get('empty_potion_slots', 0) > 0: reason += '；白兽雕像，合法用药腾槽后可接战后药水'
         elif supply and full and chosen.get('empty_potion_slots', 0) > 0: reason += '；满栏且掉药概率高'

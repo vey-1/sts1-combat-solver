@@ -398,6 +398,14 @@ public class SolverMod implements PostUpdateSubscriber, PostRenderSubscriber, Po
             JsonObject game=state.getAsJsonObject("game_state");
             game.addProperty("solver_next_rest",nextRest);
             game.add("solver_auto_context",autoContext());
+            if(game.has("combat_state")) {
+                // HpValue (docs/hp-value.md); the backend keeps its old rule when this field is missing.
+                try { JsonArray cost=HpValue.export(game); if(cost!=null)game.add("solver_hp_cost",cost); }
+                catch(RuntimeException ignored) { }
+                // PotionValue (docs/hp-value.md, "药水的价值"): one price per potion slot, null where not priced.
+                try { JsonArray price=PotionValue.export(game); if(price!=null)game.add("solver_potion_price",price); }
+                catch(RuntimeException ignored) { }
+            }
         }
         return state;
     }

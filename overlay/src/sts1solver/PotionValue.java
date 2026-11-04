@@ -1,0 +1,141 @@
+package sts1solver;
+
+import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonNull;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonPrimitive;
+import java.util.Arrays;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Map;
+import java.util.Set;
+
+/**
+ * What drinking a held potion now costs, in the same real-HP units as HpValue: the player's tier for
+ * the current stage, priced through HpValue at a typical situation. Tiers and rules: docs/hp-value.md,
+ * chapter "药水的价值" (issue #101).
+ */
+final class PotionValue {
+    /** Tier thresholds in raw HP saved: free, low, mid, higher, high, top. */
+    static final int FREE = 0, LOW = 5, MID = 10, HIGHER = 16, HIGH = 22, TOP = 32;
+    /** Potions outside the table (other characters, other mods). */
+    static final int UNKNOWN = MID;
+    /** Not priced here: revival, out-of-combat drink and escape keep their own rules. */
+    static final Set<String> SEPARATE = new HashSet<>(Arrays.asList("FairyPotion", "Fruit Juice", "SmokeBomb"));
+    /** Thresholds by column {act 1, acts 2-3, act 4, act 1 pre-Boss, acts 2-3 pre-Boss}; the player's table of 2026-11-02. */
+    static final Map<String, int[]> TIERS = new HashMap<>();
+
+    static {
+        put("Fire Potion", HIGHER, MID, FREE, HIGHER, LOW);
+        put("Block Potion", MID, MID, MID, MID, MID);
+        put("Dexterity Potion", LOW, MID, HIGHER, MID, MID);
+        put("Energy Potion", HIGHER, MID, MID, MID, MID);
+        put("Explosive Potion", HIGHER, LOW, FREE, LOW, LOW);
+        put("FearPotion", HIGHER, MID, MID, HIGH, HIGHER);
+        put("Strength Potion", MID, MID, MID, HIGHER, MID);
+        put("Swift Potion", HIGHER, HIGH, HIGH, HIGHER, HIGH);
+        put("Weak Potion", LOW, LOW, HIGHER, LOW, MID);
+        put("Ancient Potion", MID, MID, HIGH, MID, MID);
+        put("AttackPotion", HIGHER, MID, FREE, HIGHER, MID);
+        put("SkillPotion", MID, MID, MID, MID, MID);
+        put("PowerPotion", HIGHER, HIGH, HIGHER, HIGH, HIGH);
+        put("ColorlessPotion", HIGHER, HIGH, HIGHER, HIGHER, HIGH);
+        put("BlessingOfTheForge", HIGHER, MID, LOW, HIGHER, MID);
+        put("HeartOfIron", MID, LOW, FREE, MID, LOW);
+        put("CultistPotion", HIGHER, MID, LOW, HIGH, HIGH);
+        put("DistilledChaos", HIGH, HIGH, HIGH, HIGH, HIGH);
+        put("DuplicationPotion", MID, HIGHER, HIGHER, HIGHER, HIGHER);
+        put("ElixirPotion", LOW, MID, HIGHER, HIGHER, HIGHER);
+        put("EntropicBrew", MID, MID, MID, MID, MID);
+        put("EssenceOfSteel", LOW, LOW, FREE, LOW, LOW);
+        put("GamblersBrew", HIGHER, HIGH, TOP, HIGHER, HIGH);
+        put("GhostInAJar", TOP, TOP, TOP, TOP, TOP);
+        put("LiquidBronze", MID, LOW, MID, HIGH, LOW);
+        put("LiquidMemories", HIGHER, HIGH, HIGHER, HIGHER, HIGH);
+        put("SneckoOil", MID, MID, HIGHER, MID, MID);
+        put("SpeedPotion", LOW, MID, HIGHER, LOW, MID);
+        put("SteroidPotion", HIGHER, MID, MID, HIGHER, MID);
+        put("Regen Potion", LOW, LOW, LOW, LOW, LOW);
+    }
+
+    private static void put(String id, int act1, int acts23, int act4, int preBoss1, int preBoss23) {
+        TIERS.put(id, new int[]{act1, acts23, act4, preBoss1, preBoss23});
+    }
+
+    private PotionValue() {}
+
+    /** Stage index: 0 act 1, 1 acts 2-3, 2 act 4. */
+    static int stage(int act) {
+        return act <= 1 ? 0 : act <= 3 ? 1 : 2;
+    }
+
+    /**
+     * The typical situation a tier is anchored to: max HP 80, at 56, Burning Blood, A20, four fights left
+     * (three hallways and the Boss) with act 1's damage for stage 0 and act 2's for stage 1; in act 4 only the
+     * Heart is left and no act heal follows.
+     */
+    static HpValue.Context typical(int stage) {
+        Set<String> relics = new HashSet<>(Arrays.asList("Burning Blood"));
+        if (stage == 2) return new HpValue.Context(80, 20, new int[]{HpValue.DAMAGE[3][1]}, false, relics);
+        int[] d = HpValue.DAMAGE[stage];
+        return new HpValue.Context(80, 20, new int[]{d[0], d[0], d[0], d[1]}, true, relics);
+    }
+
+    static final int TYPICAL_HP = 56;
+
+    /** Price of a raw-HP threshold at a stage: what HpValue says losing that much costs in the typical situation. */
+    static double tierPrice(int threshold, int stage) {
+        return HpValue.cost(threshold, TYPICAL_HP, typical(stage));
+    }
+
+    /** Floors before the act 1-3 Boss that use the pre-Boss tiers: map rows 12-14 (the Boss is row 15). */
+    static final int PRE_BOSS_FLOORS = 3;
+
+    /**
+     * Table column for the current place: the stage (0, 1, 2), or the pre-Boss column (3 for act 1, 4 for acts 2-3)
+     * within PRE_BOSS_FLOORS of an act 1-3 Boss. The Boss fight itself and act 4 keep their stage column.
+     */
+    static int column(JsonObject game) {
+        int stage = stage(game.get("act").getAsInt());
+        if (stage == 2 || !game.has("solver_auto_context")) return stage;
+        JsonObject auto = game.getAsJsonObject("solver_auto_context");
+        if (!auto.has("y") || "MonsterRoomBoss".equals(auto.has("room") ? auto.get("room").getAsString() : "")) return stage;
+        int y = auto.get("y").getAsInt();
+        return y >= HpValue.BOSS_ROW - PRE_BOSS_FLOORS && y < HpValue.BOSS_ROW ? 3 + stage : stage;
+    }
+
+    /** The pricing stage of a column: pre-Boss columns are priced in their own stage's typical situation. */
+    static int priceStage(int column) {
+        return column == 3 ? 0 : column == 4 ? 1 : column;
+    }
+
+    static int threshold(String id, int column) {
+        int[] t = TIERS.get(id);
+        return t == null ? UNKNOWN : t[column];
+    }
+
+    /** Blood Potion: the real cost of the HP it heals, here and now; its heal is already in the drinking line's loss. */
+    static Double bloodPrice(JsonObject game) {
+        HpValue.Context c = HpValue.context(game);
+        if (c == null || !game.has("current_hp")) return null;
+        int heal = c.maxHp * (c.relics.contains("SacredBark") ? 40 : 20) / 100;
+        return HpValue.cost(heal, game.get("current_hp").getAsInt(), c);
+    }
+
+    /** solver_potion_price: one entry per potion slot; null for an empty slot or a separately handled potion. */
+    static JsonArray export(JsonObject game) {
+        if (!game.has("act") || !game.has("potions")) return null;
+        int column = column(game), stage = priceStage(column);
+        JsonArray out = new JsonArray();
+        for (JsonElement item : game.getAsJsonArray("potions")) {
+            String id = item.getAsJsonObject().has("id") ? item.getAsJsonObject().get("id").getAsString() : "";
+            Double price;
+            if (id.isEmpty() || id.equals("Potion Slot") || SEPARATE.contains(id)) price = null;
+            else if (id.equals("BloodPotion")) price = bloodPrice(game);
+            else price = tierPrice(threshold(id, column), stage);
+            out.add(price == null ? JsonNull.INSTANCE : new JsonPrimitive(price));
+        }
+        return out;
+    }
+}

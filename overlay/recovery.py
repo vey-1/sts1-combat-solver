@@ -45,6 +45,38 @@ def health(plan, game, won):
                 used_tail=bool(plan.get('used_tail')), used_fairy=int(plan.get('used_fairy', 0)))
 
 
+def boss_heal_weight(game):
+    """The next act heals 75% of missing HP after this Boss (A5+; full below), so only the rest counts."""
+    if (game.get('solver_auto_context') or {}).get('boss_heal') is not True:
+        return 1
+    return .25 if game.get('ascension_level', 20) >= 5 else 0
+
+
+def hp_cost_table(game):
+    """solver_hp_cost from the Mod's HpValue (docs/hp-value.md), or None when missing or malformed."""
+    table = game.get('solver_hp_cost')
+    if (not isinstance(table, list) or not table or table[0] != 0
+            or not all(isinstance(v, (int, float)) and not isinstance(v, bool) and v >= 0 for v in table)):
+        return None
+    return table
+
+
+def effective_loss(game, branch):
+    """A branch's HP loss in auto-policy units (issue #101). health()['loss'] itself stays raw for search.
+
+    The Mod's table already holds the act heal and healing relics; without it the old rule applies.
+    """
+    loss = branch['loss']
+    table = hp_cost_table(game)
+    if table is None:
+        return loss * boss_heal_weight(game)
+    if loss < len(table):
+        return table[int(loss)]
+    # A curse's HP can push loss past current HP: extend with the table's last step.
+    step = table[-1] - table[-2] if len(table) > 1 else 1
+    return table[-1] + (loss - (len(table) - 1)) * step
+
+
 def incense_targets(game):
     """Incense Burner counters worth ending this fight with (user rule, 2026-10-15).
 
