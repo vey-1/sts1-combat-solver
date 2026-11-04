@@ -74,6 +74,7 @@ jobs:
       - run: python tools/check_hp_value.py
       - run: python tools/check_potion_value.py
       - run: python tools/check_smoke_bomb.py --native-root .
+      - run: python tools/check_smoke_value.py
       - run: python tools/check_search_progress.py
       - run: python tools/check_search_memory.py
       - run: python tools/check_snapshot_import.py
