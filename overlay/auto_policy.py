@@ -1,7 +1,7 @@
 """Explainable potion choice over replay-validated routes, never executable commands."""
 from collections import deque
 
-from recovery import boss_heal_weight, effective_loss
+from recovery import boss_heal_weight, effective_loss, hp_cost, hp_cost_table
 
 
 def key(value):
@@ -74,18 +74,44 @@ def smoke_opening(game):
             and game.get('screen_type') == 'NONE')
 
 
+def smoke_allowance(game):
+    """(solver_smoke_allowance, solver_hp_cost) when both are valid, else None: the old raw-HP rule applies."""
+    allowance, table = game.get('solver_smoke_allowance'), hp_cost_table(game)
+    if (table is None or not isinstance(allowance, (int, float)) or isinstance(allowance, bool)
+            or not allowance >= 0):
+        return None
+    return allowance, table
+
+
 def smoke_threshold(game):
+    """Raw-HP early stop for the native probe, which keeps the first win below it.
+
+    With real-HP prices it is also capped by the smallest loss whose real cost exceeds the escape cost; it is never
+    raised above smokeLossThreshold, or a generous allowance would stop the probe on a worse line.
+    """
     threshold = game.get('solver_auto_context', {}).get('smoke_loss_threshold', 15)
-    return threshold if type(threshold) is int and threshold >= 0 else 15
+    threshold = threshold if type(threshold) is int and threshold >= 0 else 15
+    priced = smoke_allowance(game)
+    if priced is not None:
+        allowance, table = priced
+        dear = next((k for k in range(1, len(table)) if hp_cost(table, k) > allowance), len(table))
+        return min(threshold, dear)
+    return threshold
 
 
 def smoke_probe_keeps(plan, game):
-    threshold = smoke_threshold(game)
-    # Raw combat loss excludes future recovery credit and post-combat healing.
-    return (plan.get('outcome') == 1 and plan.get('hp', 0) > 0
+    """Keep the Smoke Bomb and fight when the probe's potion-free win costs no more than escaping (docs/hp-value.md)."""
+    if not (plan.get('outcome') == 1 and plan.get('hp', 0) > 0
             and not plan.get('new_permanent_curse')
-            and not plan.get('used_fairy') and not plan.get('used_tail')
-            and max(0, game['current_hp'] - plan['hp']) < threshold)
+            and not plan.get('used_fairy') and not plan.get('used_tail')):
+        return False
+    priced = smoke_allowance(game)
+    if priced is not None:
+        # solver_hp_cost is indexed by loss after this fight's victory heal, like health()['loss'].
+        allowance, table = priced
+        return hp_cost(table, max(0, game['current_hp'] - plan.get('post_hp', plan['hp']))) <= allowance
+    # Old rule: raw combat loss, excluding future recovery credit and post-combat healing.
+    return max(0, game['current_hp'] - plan['hp']) < smoke_threshold(game)
 
 
 def potion_price_table(game):

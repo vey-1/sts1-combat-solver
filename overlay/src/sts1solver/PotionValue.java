@@ -123,6 +123,27 @@ final class PotionValue {
         return HpValue.cost(heal, game.get("current_hp").getAsInt(), c);
     }
 
+    /** Smoke Bomb escape: the bomb's own tier, plus the rewards an escape gives up (an elite's relic; a hallway or event fight's card and gold). */
+    static final int SMOKE = MID, HALLWAY_REWARD = MID, ELITE_REWARD = TOP;
+
+    /**
+     * solver_smoke_allowance: what escaping with a Smoke Bomb costs, in real HP. The backend escapes only when the
+     * real cost of the best potion-free win is higher. Null without a Smoke Bomb, in a Boss room (it cannot be used)
+     * or without the room.
+     */
+    static Double smokeAllowance(JsonObject game) {
+        if (!game.has("act") || !game.has("potions") || !game.has("solver_auto_context")) return null;
+        boolean held = false;
+        for (JsonElement item : game.getAsJsonArray("potions"))
+            held |= item.getAsJsonObject().has("id") && "SmokeBomb".equals(item.getAsJsonObject().get("id").getAsString());
+        JsonObject auto = game.getAsJsonObject("solver_auto_context");
+        String room = auto.has("room") && !auto.get("room").isJsonNull() ? auto.get("room").getAsString() : "";
+        if (!held || room.isEmpty() || "MonsterRoomBoss".equals(room)) return null;
+        int stage = stage(game.get("act").getAsInt());
+        int reward = "MonsterRoomElite".equals(room) ? ELITE_REWARD : HALLWAY_REWARD;
+        return tierPrice(SMOKE, stage) + tierPrice(reward, stage);
+    }
+
     /** solver_potion_price: one entry per potion slot; null for an empty slot or a separately handled potion. */
     static JsonArray export(JsonObject game) {
         if (!game.has("act") || !game.has("potions")) return null;

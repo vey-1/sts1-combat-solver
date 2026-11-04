@@ -303,6 +303,31 @@ for snap, expected, calls in [(snapshot(), 'potion-0', 2),
     if calls == 2: assert recorded.calls[1][0][2] == [0]
     assert advisor.search.actions, 'automatic policy returned no executable action'
     assert recommend(advisor.root_game, advisor.branch_info)['branch'] == expected
+# Real-HP escape (docs/hp-value.md, 烟雾弹): solver_smoke_allowance and solver_hp_cost reach the real backend probe.
+# This root's best potion-free win at 60 HP loses 21: the raw 15 rule escapes; at 0.1 per HP it costs 2.1 and keeps.
+saved_game = advisor.root_game
+for cost, allowance, expected, threshold in [(None, None, 'potion-0', 15),
+                                             (lambda k: 0.1 * k, 8.75, 'no-potion', 15),
+                                             (lambda k: 0.1 * k, 0.15, 'potion-0', 2)]:
+    advisor.root = advisor.search.battle = battle(snapshot(['STRIKE_RED'] * 3, hp=60, enemy_hp=60, draw=['STRIKE_RED'] * 12))
+    advisor.search.actions.clear()
+    advisor.root_game = {**game, 'current_hp': 60,
+        'solver_auto_context': {'run_auto': True, 'smoke_opening': True, 'smoke_probe_budget': 128},
+        'potions': [{'id': 'SmokeBomb'}, {'id': 'FairyPotion'}, {'id': 'Potion Slot'}]}
+    if cost:
+        advisor.root_game.update(solver_hp_cost=[cost(k) for k in range(61)], solver_smoke_allowance=allowance)
+    advisor.native_search = recorded = Calls()
+    native.resume()
+    advisor.solve_smoke_opening({'game': advisor.root_game}, 0, 0, time.monotonic(),
+                                advisor.search.comparator.clone_fingerprint(advisor.root))
+    probe = advisor.branches['no-potion']
+    assert probe['outcome'] == 1 and 60 - probe['hp'] >= 15, probe.get('hp')
+    assert recorded.calls[0][0][-1] == threshold, recorded.calls[0][0][-1]
+    assert advisor.selected_branch == expected, (allowance, advisor.selected_branch)
+    assert recommend(advisor.root_game, advisor.branch_info)['branch'] == expected
+print('PASS: actual backend probe with real-HP prices keeps a 21-HP win the raw 15 rule escapes, escapes when HP is dear, '
+      'and never raises the native early stop above smokeLossThreshold')
+advisor.root_game = saved_game
 # Acts 1-3 tiers divide native.plan by 10; the probe still gets its own setting (F35 hallway escaped on a 1/10 probe).
 advisor.root = advisor.search.battle = battle(snapshot())
 advisor.search.actions.clear()

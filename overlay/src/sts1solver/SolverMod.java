@@ -405,6 +405,9 @@ public class SolverMod implements PostUpdateSubscriber, PostRenderSubscriber, Po
                 // PotionValue (docs/hp-value.md, "药水的价值"): one price per potion slot, null where not priced.
                 try { JsonArray price=PotionValue.export(game); if(price!=null)game.add("solver_potion_price",price); }
                 catch(RuntimeException ignored) { }
+                // Smoke Bomb escape cost in real HP; without it the backend keeps smokeLossThreshold.
+                try { Double smoke=PotionValue.smokeAllowance(game); if(smoke!=null)game.addProperty("solver_smoke_allowance",smoke); }
+                catch(RuntimeException ignored) { }
             }
         }
         return state;

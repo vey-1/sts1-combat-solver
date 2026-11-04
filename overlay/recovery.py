@@ -66,10 +66,14 @@ def effective_loss(game, branch):
 
     The Mod's table already holds the act heal and healing relics; without it the old rule applies.
     """
-    loss = branch['loss']
     table = hp_cost_table(game)
     if table is None:
-        return loss * boss_heal_weight(game)
+        return branch['loss'] * boss_heal_weight(game)
+    return hp_cost(table, branch['loss'])
+
+
+def hp_cost(table, loss):
+    """Real cost of losing `loss` HP from a valid solver_hp_cost table."""
     if loss < len(table):
         return table[int(loss)]
     # A curse's HP can push loss past current HP: extend with the table's last step.

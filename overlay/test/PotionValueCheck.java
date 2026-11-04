@@ -162,5 +162,48 @@ public final class PotionValueCheck {
         check(PotionValue.export(game("{" + potions("Fire Potion") + "}")) == null, "export: null without act");
         check(PotionValue.export(game("{\"act\":1}")) == null, "export: null without potions");
         System.out.println("PASS: solver_potion_price is omitted without act or potions");
+
+        smokeAllowance();
+    }
+
+    static JsonObject smokeGame(int act, int max, int hp, String room, String relics, String... held) {
+        return game("{\"act\":" + act + ",\"max_hp\":" + max + ",\"current_hp\":" + hp + ",\"ascension_level\":20,"
+            + "\"solver_auto_context\":{\"room\":\"" + room + "\",\"y\":5},\"relics\":[" + relics + "]," + potions(held) + "}");
+    }
+
+    /** Smallest loss whose real cost exceeds the escape cost: from here the probe's win no longer keeps the bomb. */
+    static int escapeAt(JsonObject g) {
+        JsonArray cost = HpValue.export(g);
+        double allowance = PotionValue.smokeAllowance(g);
+        int k = 1;
+        while (k < cost.size() && cost.get(k).getAsDouble() <= allowance) k++;
+        return k;
+    }
+
+    /** docs/hp-value.md, 烟雾弹: the escape costs the bomb's tier (中) plus the forfeited reward (hallway 中, elite 很高). */
+    static void smokeAllowance() {
+        String bb = "{\"id\":\"Burning Blood\"}";
+        check(near(PotionValue.smokeAllowance(smokeGame(1, 80, 56, "MonsterRoom", bb, "SmokeBomb")), 8.75), "hallway: 中 + 中 = 8.75");
+        check(near(PotionValue.smokeAllowance(smokeGame(1, 80, 56, "EventRoom", bb, "SmokeBomb")), 8.75), "event fight prices as a hallway");
+        check(near(PotionValue.smokeAllowance(smokeGame(2, 80, 56, "MonsterRoomElite", bb, "Potion Slot", "SmokeBomb")), 18.375),
+            "elite: 中 + 很高 = 18.375, any slot");
+        check(near(PotionValue.smokeAllowance(smokeGame(4, 80, 56, "MonsterRoomElite", bb, "SmokeBomb")), 42), "act 4 elite: 10 + 32");
+        check(PotionValue.smokeAllowance(smokeGame(1, 80, 56, "MonsterRoomBoss", bb, "SmokeBomb")) == null, "Boss room: null");
+        check(PotionValue.smokeAllowance(smokeGame(1, 80, 56, "MonsterRoom", bb, "GamblersBrew")) == null, "no Smoke Bomb: null");
+        check(PotionValue.smokeAllowance(game("{\"act\":1," + potions("SmokeBomb") + "}")) == null, "no auto context: null");
+
+        // S1, the F6 Gremlin Nob of 2026-11-04: 80/82, Burning Blood, act 1 elite. Old rule escaped at 15.
+        JsonObject nob = smokeGame(1, 82, 80, "MonsterRoomElite", bb, "SmokeBomb", "GamblersBrew");
+        check(HpValue.export(nob).get(20).getAsDouble() <= PotionValue.smokeAllowance(nob), "S1: a 20-HP win at 80/82 keeps the bomb");
+        check(escapeAt(nob) == 46, "S1: escape only past 45 HP, got " + escapeAt(nob));
+        // S3: 20/80, act 2 hallway, no healing relic: 15 HP is dearer than the escape.
+        JsonObject low = smokeGame(2, 80, 20, "MonsterRoom", "", "SmokeBomb");
+        check(HpValue.export(low).get(15).getAsDouble() > PotionValue.smokeAllowance(low), "S3: 15 HP at 20/80 escapes");
+        check(escapeAt(low) == 8, "S3: escape from 8 HP, got " + escapeAt(low));
+        // S4: same HP and loss (56/80, 25 HP costs 10.938): the elite keeps, the hallway escapes.
+        check(escapeAt(smokeGame(1, 80, 56, "MonsterRoomElite", bb, "SmokeBomb")) > 25
+            && escapeAt(smokeGame(1, 80, 56, "MonsterRoom", bb, "SmokeBomb")) <= 25, "S4: the forfeited elite reward is counted");
+        System.out.println("PASS: solver_smoke_allowance = Smoke Bomb 中 + reward (hallway/event 中, elite 很高); null in a Boss room "
+            + "or without a bomb; F6 Nob at 80/82 escapes only past 45 HP, 20/80 from 8");
     }
 }
