@@ -24,7 +24,7 @@ public final class HpOwnerCheck {
     /** The questions consumers may ask. */
     static final Set<String> HP_VALUE = new HashSet<>(Arrays.asList("Context", "context", "cost", "gain", "reserve", "extra",
         "export", "exportDeath"));
-    static final Set<String> HP_PRICES = new HashSet<>(Arrays.asList("Reward", "reward", "export", "smokeAllowance"));
+    static final Set<String> HP_PRICES = new HashSet<>(Arrays.asList("Reward", "reward", "export", "smokeAllowance", "holdPrice", "potionSwap"));
     static final Pattern MEMBER = Pattern.compile("\\b(HpValue|HpPrices)\\s*\\.\\s*(\\w+)");
     /** Two cost calls in one statement joined by a minus: a marginal cost that HpValue.extra owns. */
     static final Pattern DIFFERENCE = Pattern.compile("\\bHpValue\\s*\\.\\s*cost\\s*\\([^;]*\\)\\s*-\\s*HpValue\\s*\\.\\s*cost\\s*\\(");

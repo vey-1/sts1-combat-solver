@@ -115,5 +115,47 @@ public final class PotionRewardsCheck {
             }
         }
         System.out.println("PASS: late potion values, phase boundaries, replacement advice, unknown/Sozu/Bloom, purge button, out-of-combat potions");
+        priced();
+    }
+
+    /** A reward screen with HpValue's context: act 1 hallway on row 3, 56/80, A20, Burning Blood. */
+    static JsonObject rewardGame(String[] held, String... offered) {
+        JsonObject g=new JsonParser().parse("{\"screen_type\":\"COMBAT_REWARD\",\"room_phase\":\"COMPLETE\",\"act\":1,\"floor\":4,"
+            +"\"ascension_level\":20,\"current_hp\":56,\"max_hp\":80,\"relics\":[{\"id\":\"Burning Blood\"}],"
+            +"\"solver_auto_context\":{\"room\":\"MonsterRoom\",\"y\":3}}").getAsJsonObject();
+        JsonArray slots=new JsonArray();
+        for(String id:held){JsonObject b=bottle(id);b.addProperty("can_discard",!id.equals("Potion Slot"));slots.add(b);}
+        g.add("potions",slots);
+        JsonArray rewards=new JsonArray();
+        for(String id:offered){JsonObject r=new JsonObject();r.addProperty("reward_type","POTION");r.add("potion",bottle(id));rewards.add(r);}
+        JsonObject screen=new JsonObject();screen.add("rewards",rewards);g.add("screen_state",screen);
+        return g;
+    }
+
+    /** docs/hp-value.md, "领药": real-HP prices from the tier table; a swap needs more than one 低 tier of gain. */
+    static void priced() {
+        // Act 1 tiers: Weak 低 (2.1875), Block 中 (4.375), Fire 较高 (7), Ghost 很高 (14).
+        PotionRewards.Advice a=PotionRewards.advise(rewardGame(new String[]{"Weak Potion","Potion Slot"},"Block Potion","Fire Potion"));
+        check(a.actionable()&&a.slot==1&&a.incoming.equals("Fire Potion"),"empty slot: the dearest offer, got "+a.incoming);
+        a=PotionRewards.advise(rewardGame(new String[]{"Weak Potion","Block Potion"},"Fire Potion"));
+        check(a.actionable()&&a.outgoing.equals("Weak Potion")&&a.incoming.equals("Fire Potion"),"full: 低 -> 较高 swaps the cheapest");
+        a=PotionRewards.advise(rewardGame(new String[]{"Weak Potion","Weak Potion"},"Block Potion"));
+        check(!a.actionable(),"full: 低 -> 中 is one 低 tier of gain, kept");
+        a=PotionRewards.advise(rewardGame(new String[]{"Block Potion","Block Potion"},"Fire Potion"));
+        check(a.actionable()&&a.message.contains("4.4")&&a.message.contains("7.0"),"full: 中 -> 较高 (2.625) swaps, prices in the note: "+a.message);
+        a=PotionRewards.advise(rewardGame(new String[]{"Weak Potion","Block Potion"},"FocusPotion"));
+        check(!a.actionable()&&a.message.contains("未知"),"full: an unknown offer is left to the player");
+        a=PotionRewards.advise(rewardGame(new String[]{"FocusPotion","Weak Potion"},"GhostInAJar"));
+        check(a.actionable()&&a.outgoing.equals("Weak Potion"),"an unknown held potion is never swapped out");
+        a=PotionRewards.advise(rewardGame(new String[]{"Block Potion","Block Potion"},"FairyPotion"));
+        check(a.actionable()&&a.incoming.equals("FairyPotion"),"a Fairy is worth a death");
+        JsonObject bloom=rewardGame(new String[]{"Block Potion","Block Potion"},"BloodPotion","Regen Potion","FairyPotion");
+        bloom.getAsJsonArray("relics").add(new JsonParser().parse("{\"id\":\"Mark of the Bloom\"}"));
+        check(!PotionRewards.advise(bloom).actionable(),"Mark of the Bloom: healing potions are worth nothing");
+        // Without HpValue's context (no max HP here) the old point scores apply.
+        JsonObject old=rewardGame(new String[]{"Block Potion","Block Potion"},"Swift Potion");
+        old.remove("solver_auto_context");
+        check(PotionRewards.advise(old).message.contains("组合分"),"no context: the old inventory scores");
+        System.out.println("PASS: real-HP potion rewards: dearest offer fills a slot, a swap needs more than one 低 tier, unknown and Bloom rules, old scores without context");
     }
 }

@@ -124,6 +124,43 @@ final class HpPrices {
         return HpValue.reserve(heal, game.get("current_hp").getAsInt(), c);
     }
 
+    /** Potions this book can price for holding: the tier table, the separately handled ones and the Blood Potion. */
+    static boolean known(String id) {
+        return TIERS.containsKey(id) || SEPARATE.contains(id) || id.equals("BloodPotion");
+    }
+
+    /**
+     * Potion rewards (docs/hp-value.md, "领药"): what holding this potion is worth here, in real HP; null when the game
+     * state is not priced (no HpValue context) or the potion is not known. A table potion is worth its drinking price
+     * for this place (stage or pre-Boss tier); the Blood Potion its held heal; a Smoke Bomb its own tier (中); Fruit
+     * Juice, drunk outside combat for max HP, 很高; a Fairy in a Bottle a death, the price of the revival it is. Mark of
+     * the Bloom stops every heal, so the healing potions are worth nothing with it.
+     */
+    static Double holdPrice(String id, JsonObject game) {
+        HpValue.Context c = HpValue.context(game);
+        if (c == null || !game.has("act") || !known(id)) return null;
+        boolean bloom = c.relics.contains("Mark of the Bloom");
+        int column = column(game), stage = priceStage(column);
+        switch (id) {
+            case "FairyPotion": return bloom ? 0.0 : HpValue.death(c);
+            case "Regen Potion": if (bloom) return 0.0; break;
+            case "BloodPotion": return bloom ? Double.valueOf(0.0) : bloodPrice(game);
+            case "Fruit Juice": return tierPrice(TOP, stage);
+            case "SmokeBomb": return tierPrice(SMOKE, stage);
+            default: break;
+        }
+        return tierPrice(threshold(id, column), stage);
+    }
+
+    /**
+     * Potion rewards on a full belt: an offer must be worth more than the held potion by more than one 低 tier (5 raw
+     * HP at the typical situation), so a one-step gain in the low tiers is not worth a swap. Fitted on the player's
+     * A20 Ironclad reward screens (docs/hp-value.md, "领药").
+     */
+    static double potionSwap(JsonObject game) {
+        return tierPrice(LOW, priceStage(column(game)));
+    }
+
     /** Smoke Bomb escape: the bomb's own tier, plus the rewards an escape gives up (an elite's relic; a hallway or event fight's card and gold). */
     static final int SMOKE = MID, HALLWAY_REWARD = MID, ELITE_REWARD = TOP;
 

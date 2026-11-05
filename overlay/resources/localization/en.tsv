@@ -277,6 +277,7 @@ Boss 已有合格无药胜线 · 固定路线，结束搜索|Boss: accepted poti
 药水：保留现有库存|Potions: keep current inventory
 领取 |Collect 
 （组合分 | (inventory score 
+（真实血价 %.1f → %.1f）| (real-HP value %.1f → %.1f)
 （缺上限，保留抽牌＋变量）| (low scaling: keep draw + variable)
 （缺上限，减少重复抽牌）| (low scaling: reduce duplicate draw)
  [撤回]| [undo]

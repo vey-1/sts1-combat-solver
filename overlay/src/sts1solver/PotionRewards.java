@@ -137,6 +137,9 @@ final class PotionRewards {
         JsonArray potions=game.getAsJsonArray("potions");
         JsonArray rewards=game.getAsJsonObject("screen_state").getAsJsonArray("rewards");
         if(rewards==null)return none;
+        HpValue.Context value;
+        try { value=HpValue.context(game); } catch(RuntimeException failure) { value=null; }
+        if(value!=null)return advisePriced(game,potions,rewards,none);
         List<String> inventory=new ArrayList<>();
         int emptySlot=-1;
         for(int i=0;i<potions.size();i++) {
@@ -169,6 +172,43 @@ final class PotionRewards {
                     ?(comboValue(candidate,game)>0?I18n.t("（缺上限，保留抽牌＋变量）"):I18n.t("（缺上限，减少重复抽牌）"))
                     :I18n.t("（组合分 ")+before+" → "+after+"）";
                 best=new Advice(i,slot,string(p,"id"),string(old,"id"),text);
+            }
+        }
+        return best;
+    }
+    /**
+     * Real-HP potion rewards (docs/hp-value.md, "领药"; issue #101, V3): each potion is worth HpPrices.holdPrice here.
+     * An empty slot takes the dearest offered potion; a full belt swaps a discardable potion only when the offer is
+     * worth more than HpPrices.potionSwap above it (one 低 tier, 5 raw HP; fitted to the player's A20 Ironclad
+     * reward screens). Potions the price book does not know are never swapped out, and an unknown offer on a full belt
+     * is left to the player, as in the old rule.
+     */
+    static Advice advisePriced(JsonObject game, JsonArray potions, JsonArray rewards, Advice none) {
+        int emptySlot=-1;
+        for(int i=0;i<potions.size();i++)
+            if(string(potions.get(i).getAsJsonObject(),"id").equals("Potion Slot")){emptySlot=i;break;}
+        Advice best=none;
+        double gain=Double.NEGATIVE_INFINITY, margin=HpPrices.potionSwap(game);
+        for(int i=0;i<rewards.size();i++) {
+            JsonObject r=rewards.get(i).getAsJsonObject();
+            if(!"POTION".equals(string(r,"reward_type")) || !r.has("potion"))continue;
+            JsonObject p=r.getAsJsonObject("potion");
+            Double price=HpPrices.holdPrice(string(p,"id"),game);
+            if(emptySlot>=0) { // any potion fills an empty slot; the dearest first, an unknown one last
+                double rank=price==null?-1:price;
+                if(rank>gain){gain=rank;best=new Advice(i,emptySlot,string(p,"id"),"Potion Slot",I18n.t("领取 ")+string(p,"name"));}
+                continue;
+            }
+            if(price==null){if(!best.actionable())best=new Advice(-1,-1,"","",I18n.t("未知药水：请手动比较"));continue;}
+            for(int slot=0;slot<potions.size();slot++) {
+                JsonObject old=potions.get(slot).getAsJsonObject();
+                Double held=HpPrices.holdPrice(string(old,"id"),game);
+                if(!flag(old,"can_discard") || held==null)continue;
+                double improvement=price-held;
+                if(improvement<=margin || improvement<=gain)continue;
+                gain=improvement;
+                best=new Advice(i,slot,string(p,"id"),string(old,"id"),I18n.t("换药：")+string(old,"name")+" → "+string(p,"name")
+                    +String.format(Locale.ROOT,I18n.t("（真实血价 %.1f → %.1f）"),held,price));
             }
         }
         return best;
