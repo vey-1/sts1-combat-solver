@@ -42,3 +42,25 @@ cheap = [round(k * 0.5, 3) for k in range(61)]
 assert recommend({**base, 'solver_hp_cost': cheap}, [keep, drink])['branch'] == 'no-potion'  # 7 < 10
 assert recommend({**base, 'solver_hp_cost': cheap}, [drink])['branch'] == 'potion-0'          # survival still drinks
 print('PASS: recommend() uses solver_hp_cost: a cheaper HP keeps the bottle, the only winning line still drinks')
+
+# V2: past the table (a curse's HP), the extension stops at solver_hp_death; a missing or bad death keeps the old extension.
+from recovery import hp_cost, hp_death
+capped = {**game, 'solver_hp_death': 4.5}
+assert effective_loss(capped, dict(loss=6)) == 3.0                     # 3.0 is under the death price
+assert effective_loss({**capped, 'solver_hp_death': 2.5}, dict(loss=6)) == 2.5   # capped at death
+assert [effective_loss({**capped, 'solver_hp_death': 1.0}, dict(loss=k)) for k in range(5)] == table  # the table itself is untouched
+assert hp_cost([0, 5, 4], 4, death=100) == 2                          # a falling last step (Meat on the Bone) still extends down
+for bad in (None, 'x', True, -1):
+    assert hp_death({'solver_hp_death': bad}) is None, bad
+    assert effective_loss({**game, 'solver_hp_death': bad}, dict(loss=6)) == 3.0, bad
+assert hp_cost([0, 10, 20], 9, death=100) == 90 and hp_cost([0, 10, 20], 12, death=100) == 100
+print('PASS: a loss past current HP extends the table up to solver_hp_death; without it the extension is uncapped')
+
+# The revival price is solver_hp_death when present, max HP + 20 otherwise (the same number from the Mod).
+tail = dict(id='tail', available=True, won=True, loss=0, potion_uses=[], empty_potion_slots=0, used_tail=True)
+hurt = dict(id='hurt', available=True, won=True, loss=60, potion_uses=[], empty_potion_slots=0)
+flat = {**base, 'solver_hp_cost': [float(k) for k in range(61)]}
+assert recommend({**flat, 'solver_hp_death': 100.0}, [tail, hurt])['branch'] == 'hurt'   # 60 < 100
+assert recommend({**flat, 'solver_hp_death': 50.0}, [tail, hurt])['branch'] == 'tail'    # 50 < 60
+assert recommend(flat, [tail, hurt])['branch'] == 'hurt'                                 # fallback 80 + 20
+print('PASS: a used revival is priced at solver_hp_death, or max HP + 20 without it')

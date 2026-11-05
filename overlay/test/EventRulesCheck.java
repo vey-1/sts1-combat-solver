@@ -250,10 +250,10 @@ public final class EventRulesCheck {
         System.out.println("PASS: event rules and removal order");
     }
 
-    /** An act 2 event in PotionValue's typical situation: there the real cost of k HP is the price of a k-HP reward. */
+    /** An act 2 event in HpPrices's typical situation: there the real cost of k HP is the price of a k-HP reward. */
     static EventRules.Context priced(String event, int shown, int hp) {
         EventRules.Context c = c(event, shown, hp, 80, 100);
-        c.ascension = 20; c.act = 2; c.value = PotionValue.typical(1);
+        c.ascension = 20; c.act = 2; c.value = HpPrices.typical(1);
         return c;
     }
 

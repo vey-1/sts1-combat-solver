@@ -102,6 +102,14 @@ final class HpValue {
     }
 
     /**
+     * Extra cost of paying k HP now when {@code due} HP is already to be paid later either way (Knowing Skull: leaving
+     * costs 6 whatever was taken): cost(k + due) - cost(due).
+     */
+    static double extra(int k, int due, int hp, Context c) {
+        return cost(k + Math.max(0, due), hp, c) - cost(Math.max(0, due), hp, c);
+    }
+
+    /**
      * Value of holding h HP of healing for later (Blood Potion): the cost of being h lower than hp + h, without capping
      * the heal at the HP missing now; above max HP the cost is measured from max HP.
      */
@@ -161,6 +169,16 @@ final class HpValue {
         JsonArray out = new JsonArray();
         for (int k = 0; k < Math.max(1, hp); k++) out.add(new JsonPrimitive(cost(k, hp, c)));
         return out;
+    }
+
+    /**
+     * solver_hp_death: the price of dying (max HP + 20), the ceiling of every living cost; null when unknown. The
+     * backend uses it as the cap of a loss past current HP (a curse's HP, docs/hp-value.md "导出格式") and as the price
+     * of a used revival.
+     */
+    static Double exportDeath(JsonObject game) {
+        Context c = context(game);
+        return c == null ? null : death(c);
     }
 
     private static String string(JsonObject value, String name) {

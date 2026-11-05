@@ -12,11 +12,12 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * What drinking a held potion now costs, in the same real-HP units as HpValue: the player's tier for
- * the current stage, priced through HpValue at a typical situation. Tiers and rules: docs/hp-value.md,
- * chapter "药水的价值" (issue #101).
+ * The price book of issue #101: what held potions, the Smoke Bomb escape and event rewards are worth, in HpValue's
+ * real-HP units. Every price is a raw-HP amount at a typical situation, converted through HpValue; consumers compare
+ * a cost from HpValue with a price from here and hold no prices of their own (HpOwnerCheck). Tiers and rules:
+ * docs/hp-value.md, chapters "药水的价值" and "事件的血价".
  */
-final class PotionValue {
+final class HpPrices {
     /** Tier thresholds in raw HP saved: free, low, mid, higher, high, top. */
     static final int FREE = 0, LOW = 5, MID = 10, HIGHER = 16, HIGH = 22, TOP = 32;
     /** Potions outside the table (other characters, other mods). */
@@ -63,7 +64,7 @@ final class PotionValue {
         TIERS.put(id, new int[]{act1, acts23, act4, preBoss1, preBoss23});
     }
 
-    private PotionValue() {}
+    private HpPrices() {}
 
     /** Stage index: 0 act 1, 1 acts 2-3, 2 act 4. */
     static int stage(int act) {
@@ -143,6 +144,35 @@ final class PotionValue {
         int reward = "MonsterRoomElite".equals(room) ? ELITE_REWARD : HALLWAY_REWARD;
         return tierPrice(SMOKE, stage) + tierPrice(reward, stage);
     }
+
+    /**
+     * Event rewards (docs/hp-value.md, "事件的血价"): raw HP at the typical situation, fitted to the player's A20
+     * Ironclad event choices. Shining Light: per target the upgrade grid ranks highly, per other target, and both
+     * targets when not pre-read.
+     */
+    static final int GOLD_PER_HP = 10;
+    static final int RELIC = TOP, BOOK = HIGH, COLORLESS_CARD = MID;
+    static final int WORTHY_UPGRADE = HIGHER, OTHER_UPGRADE = LOW, UNREAD_LIGHT = HIGH;
+
+    /** What one event choice brings. The raw amounts add up first and are priced once, as one reward. */
+    static final class Reward {
+        private int raw;
+
+        Reward relics(int n) { raw += RELIC * n; return this; }
+        Reward books(int n) { raw += BOOK * n; return this; }
+        Reward colorlessCards(int n) { raw += COLORLESS_CARD * n; return this; }
+        /** Shining Light, pre-read: upgrades the grid ranks highly, and the others. */
+        Reward upgrades(int worthy, int other) { raw += WORTHY_UPGRADE * worthy + OTHER_UPGRADE * other; return this; }
+        /** Shining Light without a pre-read: two upgrades of unknown worth. */
+        Reward unreadLight() { raw += UNREAD_LIGHT; return this; }
+        /** Gold, whole HP only (10 gold per HP, rounded down). */
+        Reward gold(int amount) { raw += amount / GOLD_PER_HP; return this; }
+
+        /** Real-HP price in this act. */
+        double price(int act) { return tierPrice(raw, stage(act)); }
+    }
+
+    static Reward reward() { return new Reward(); }
 
     /** solver_potion_price: one entry per potion slot; null for an empty slot or a separately handled potion. */
     static JsonArray export(JsonObject game) {

@@ -101,7 +101,7 @@ public final class HpValueCheck {
 
     /** docs/hp-value.md, "边界": each boundary at its value and just past it. */
     static void boundaries() {
-        HpValue.Context typical = PotionValue.typical(1); // act 2: 80 max HP, A20, Burning Blood, 4 fights left
+        HpValue.Context typical = HpPrices.typical(1); // act 2: 80 max HP, A20, Burning Blood, 4 fights left
         // Loss: nothing lost costs nothing; at or past the HP held is death, max HP + 20.
         check(HpValue.cost(0, 56, typical) == 0.0 && HpValue.cost(-3, 56, typical) == 0.0, "no loss costs 0");
         check(HpValue.cost(56, 56, typical) == 100.0 && HpValue.cost(70, 56, typical) == 100.0, "losing all HP is death: 100");
@@ -157,5 +157,18 @@ public final class HpValueCheck {
         HpValue.Context bare = HpValue.context(game("{\"max_hp\":80,\"current_hp\":60,\"ascension_level\":20,\"act\":1,\"solver_auto_context\":{}}"));
         check(bare != null && bare.relics.isEmpty() && bare.future.length == 7, "no row and no relics: defaults (7 fights, none)");
         System.out.println("PASS: missing max HP, act or ascension is unknown; a missing row or relic list uses defaults");
+
+        // V2: the marginal cost (Knowing Skull) and the exported death price.
+        check(HpValue.extra(9, 6, 56, typical) == HpValue.cost(15, 56, typical) - HpValue.cost(6, 56, typical)
+            && HpValue.extra(9, 0, 56, typical) == HpValue.cost(9, 56, typical) && HpValue.extra(0, 6, 56, typical) == 0.0,
+            "extra: cost(k + due) - cost(due); nothing due is the plain cost; nothing paid is free");
+        check(HpValue.extra(9, -2, 56, typical) == HpValue.cost(9, 56, typical), "extra: a negative due counts as none");
+        check(HpValue.extra(50, 6, 56, typical) == HpValue.death(typical) - HpValue.cost(6, 56, typical),
+            "extra: paying into death costs the rest of the death price");
+        JsonObject known = game("{\"max_hp\":80,\"current_hp\":60,\"ascension_level\":20,\"act\":2,\"solver_auto_context\":{}}");
+        check(HpValue.exportDeath(known) == 100.0, "solver_hp_death: max HP + 20");
+        check(HpValue.exportDeath(game("{\"max_hp\":80,\"current_hp\":60,\"act\":2,\"solver_auto_context\":{}}")) == null,
+            "solver_hp_death: unknown without ascension");
+        System.out.println("PASS: extra is the cost difference, solver_hp_death is max HP + 20 or omitted when unknown");
     }
 }

@@ -5,7 +5,7 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'overlay'))
 from auto_policy import smoke_probe_keeps, smoke_threshold
 
-HALLWAY, ELITE = 8.75, 18.375  # 中 + 中, 中 + 很高 in acts 1-3 (PotionValueCheck pins these from Java)
+HALLWAY, ELITE = 8.75, 18.375  # 中 + 中, 中 + 很高 in acts 1-3 (HpPricesCheck pins these from Java)
 
 
 def game(hp, cost, allowance=None, **extra):

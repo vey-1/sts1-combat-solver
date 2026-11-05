@@ -97,7 +97,8 @@ def main():
                         str(here / 'test/SearchStatusCheck.java'),
                         str(here / 'test/PanelBodyCheck.java'),
                         str(here / 'test/HpValueCheck.java'),
-                        str(here / 'test/PotionValueCheck.java')], check=True)
+                        str(here / 'test/HpPricesCheck.java'),
+                        str(here / 'test/HpOwnerCheck.java')], check=True)
         subprocess.run(['javac', '--release', '8', '-proc:none', '-encoding', 'UTF-8', '-cp',
                         os.pathsep.join((str(classes), classpath)), '-d', str(checks),
                         str(here / 'test/PotionRewardsCheck.java')], check=True)
@@ -118,7 +119,9 @@ def main():
         subprocess.run(['java', '-Dfile.encoding=UTF-8', '-cp', check_cp, 'sts1solver.PanelBodyCheck'], check=True)
         subprocess.run(['java', '-Dfile.encoding=UTF-8', '-cp', check_cp, 'sts1solver.StateKeyCheck'], check=True)
         subprocess.run(['java', '-Dfile.encoding=UTF-8', '-cp', check_cp, 'sts1solver.HpValueCheck'], check=True)
-        subprocess.run(['java', '-Dfile.encoding=UTF-8', '-cp', check_cp, 'sts1solver.PotionValueCheck'], check=True)
+        subprocess.run(['java', '-Dfile.encoding=UTF-8', '-cp', check_cp, 'sts1solver.HpPricesCheck'], check=True)
+        subprocess.run(['java', '-Dfile.encoding=UTF-8', '-cp', check_cp,
+                        'sts1solver.HpOwnerCheck', str(here / 'src/sts1solver')], check=True)
         subprocess.run(['java', '-Dfile.encoding=UTF-8', '-cp', check_cp,
                         'sts1solver.Distill2Check', str(here / 'test/distill2-reference.json')], check=True)
         subprocess.run(['java', '-Dfile.encoding=UTF-8', '-cp', check_cp,

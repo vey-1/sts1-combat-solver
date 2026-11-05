@@ -17,9 +17,11 @@
 
 | 部分 | 位置 | 职责 |
 | --- | --- | --- |
-| 计算 | `overlay/src/sts1solver/HpValue.java`（新） | 唯一的计算来源 |
-| 导出 | `SolverMod.capture()` | 把结果写进游戏状态的 `solver_hp_cost` 字段 |
-| Python 侧读取 | `overlay/recovery.py` 的 `effective_loss()` | 只查表，不重新计算 |
+| 计算 | `overlay/src/sts1solver/HpValue.java` | 唯一的模型：掉 k 血的真实代价（`cost`）、已经要付一笔时再多付的代价（`extra`）、回血的价值（`gain`、`reserve`）、死亡价 |
+| 价格表 | `overlay/src/sts1solver/HpPrices.java`（V2 前叫 `PotionValue`） | 所有价格的唯一来源：档位、典型情况、药价、烟雾弹逃跑的代价、事件奖励的价格 |
+| 导出 | `SolverMod.capture()` | 把结果写进游戏状态的 `solver_hp_cost`、`solver_hp_death`、`solver_potion_price`、`solver_smoke_allowance` 字段 |
+| Python 侧读取 | `overlay/recovery.py` 的 `effective_loss()`、`auto_policy.py` | 只查表，不重新计算 |
+| 边界检查 | `overlay/test/HpOwnerCheck.java` | 除了上面两个文件，其他代码只能问"代价"和"价格"：自己用档位常量、典型情况、`tierPrice`、模型参数，或者用两次 `cost` 相减算边际代价，检查都会失败 |
 | 不受影响 | 搜索（`native.cpp`、`VictoryHp.h`）、`health()['loss']`、`backend.py` 的 `BOSS_HEAL_POTION_LOSS`、`Distill2` 网络 | 继续使用原始血量 |
 
 ## 回血来源
@@ -109,7 +111,8 @@
 ### 导出格式
 
 `solver_hp_cost` 是一个数组，下标 k 从 0 到当前血量 − 1（只列活着的结果），值是"这场多掉 k 血"的真实代价，k 按 `health()['loss']` 的口径计。死亡不列：赢下来的路线不会以 0 血结束。
-- 下标超出数组长度时（比如诅咒折算的血量让 loss 达到或超过当前血量），超出部分按最后一格的增量往外延伸。诅咒折算的血和死亡价怎么合在一起，留到 V2 定。
+- 下标超出数组长度时（比如诅咒折算的血量让 loss 达到或超过当前血量），超出部分按最后一格的增量往外延伸，**但不超过死亡价**（V2 定，2026-11-05）：诅咒折算的血照旧算作掉血，赢下来的路线带着诅咒也不会比死更贵。死亡价由 `HpValue` 导出为 `solver_hp_death`（一个数，最大生命 + 20；不知道时不导出）。读不到 `solver_hp_death` 时（旧版 Mod），照旧不封顶。
+- 用掉复活（蜥蜴尾巴、瓶中精灵）的代价也读 `solver_hp_death`，读不到时用"最大生命 + 20"。两者是同一个数，Python 不再自己算死亡价。
 - Python 读不到这个字段时，退回到现在的规则：`loss × 首领权重`。
 
 ## 算例（λ = 0.25，低血拐点 30%、系数 4，A20，最大生命 80）
@@ -274,11 +277,11 @@
 
 **搜索不变**：试算仍然在找到"掉血低于上限"的胜线时提前停下。这个上限取 `smokeLossThreshold`（默认 15）和"真实代价超过逃跑代价的最小掉血量"中较小的一个。只往下收，不往上放：放宽会让试算更早停在更差的打法上。
 
-**谁负责**：`PotionValue.smokeAllowance()` 算逃跑的代价，`SolverMod.capture()` 导出为 `solver_smoke_allowance`（一个数；没有烟雾弹或在首领房间时不导出）；`auto_policy.smoke_threshold()` 和 `smoke_probe_keeps()` 读取它。`solver_smoke_allowance` 或 `solver_hp_cost` 读不到时，完全走旧规则。
+**谁负责**：`HpPrices.smokeAllowance()` 算逃跑的代价，`SolverMod.capture()` 导出为 `solver_smoke_allowance`（一个数；没有烟雾弹或在首领房间时不导出）；`auto_policy.smoke_threshold()` 和 `smoke_probe_keeps()` 读取它。`solver_smoke_allowance` 或 `solver_hp_cost` 读不到时，完全走旧规则。
 
 ### 谁负责什么
 
-- `overlay/src/sts1solver/PotionValue.java`（新）：存放档位表，按 `HpValue` 换算价格，是唯一的计算来源。
+- `overlay/src/sts1solver/HpPrices.java`（V2 前叫 `PotionValue`）：存放档位表，按 `HpValue` 换算价格，是唯一的计算来源。
 - `SolverMod.capture()`：在战斗中导出 `solver_potion_price`，这是一个数组，和游戏状态里的 `potions` 一一对应，值是这瓶药的价格（真实的血）。空格子，以及瓶中精灵、果汁、烟雾弹，值为 `null`。
 - `auto_policy.price()`：有这个字段就用它；没有就完全走旧规则，包括旧的加价和降价。
 
@@ -288,7 +291,7 @@ H2 的第二步（2026-11-04）：事件里"付血换东西"的规则，改为�
 
 ### 规则
 
-**付出的血的真实代价 ≤ 奖励的价格，就付；打平也付。** 真实代价按当前局面算，用 `HpValue.cost`（和战斗里的 `solver_hp_cost` 同一个模型，只是事件里没有战后回血）。奖励的价格按"药水的价值"一节的办法换算：先定"在典型情况下，这个奖励值多少原始血"，再按 `PotionValue.tierPrice` 换成真实的血。所以在典型情况（56/80、燃烧之血、A20）下，规则恰好是"付的血 ≤ 奖励值的血"。血量更低、跌进 30% 以下时更不愿意付；接近满血、回血会溢出时更愿意付。
+**付出的血的真实代价 ≤ 奖励的价格，就付；打平也付。** 真实代价按当前局面算，用 `HpValue.cost`；全知头骨用 `HpValue.extra`，只算多付的那部分（和战斗里的 `solver_hp_cost` 同一个模型，只是事件里没有战后回血）。奖励的价格按"药水的价值"一节的办法换算：先定"在典型情况下，这个奖励值多少原始血"，再按 `HpPrices` 的档位换算换成真实的血。所以在典型情况（56/80、燃烧之血、A20）下，规则恰好是"付的血 ≤ 奖励值的血"。血量更低、跌进 30% 以下时更不愿意付；接近满血、回血会溢出时更愿意付。
 
 付了会死的选项，一律不选。闪耀之光、泥坑原有的"前方危险度高就不付"仍然保留，作为额外的否决。
 
@@ -355,7 +358,8 @@ H2 的第二步（2026-11-04）：事件里"付血换东西"的规则，改为�
 
 ### 谁负责什么
 
-- `EventRules.java`：奖励的价格表（`GOLD_PER_HP`、`RELIC`、`BOOK`、`COLORLESS_CARD`、`WORTHY_UPGRADE`、`OTHER_UPGRADE`、`UNREAD_LIGHT`）和上面六个事件的规则。
+- `HpPrices.java`：奖励的价格表（`GOLD_PER_HP`、`RELIC`、`BOOK`、`COLORLESS_CARD`、`WORTHY_UPGRADE`、`OTHER_UPGRADE`、`UNREAD_LIGHT`）。事件规则用 `HpPrices.reward()` 列出一个选项带来的东西，原始血先相加，再整体换算一次价格（和 V2 之前的算法相同）。
+- `EventRules.java`：上面六个事件的规则。规则里不再有价格，只比较 `HpValue` 给的代价和 `HpPrices` 给的价格（V2）。
 - `OutsidePacket.eventRule()`：用 `HpValue.context(game)` 填 `EventRules.Context.value`。游戏状态里没有 `solver_auto_context`（离线检查、训练参考链）时 `value` 为空，六个事件完全走旧规则。
 
 ## 桥的清单：现有的血量规则
@@ -393,6 +397,8 @@ H2 的第二步（2026-11-04）：事件里"付血换东西"的规则，改为�
 已定（2026-11-02，用户）：λ = 0.25；加入低血风险项，系数 4（拐点 30% 最大生命）；d 用每幕中位数；本幕剩下的场数按平均路线查表。
 
 已定（2026-11-04，用户按推荐，V1）：死亡价 = 最大生命 + 20；正好 30% 不算低血；回血的价值由 `HpValue` 计算（`gain`、`reserve`）；最大生命、幕数、进阶等级缺失时返回"不知道"。由此推出的两条：活着的代价不超过死亡价；模拟里被打死的路线不再回血。见"边界"一节。
+
+已定（2026-11-05，V2，按用户 11-04 的委托由 Claude 定）：诅咒折算的血照旧算作掉血，超出当前血量时封顶在死亡价（见"导出格式"）。所有价格搬进 `HpPrices`，规则只比较代价和价格；在 20000 个随机局面上，`solver_hp_cost`、`solver_potion_price`、`solver_smoke_allowance` 和六个事件的决策（连备注文字）与 V2 之前逐条相同，由此推断"和你的选择对照"里的对上数不变（没有重跑那 154 局）。
 
 还开着的：
 

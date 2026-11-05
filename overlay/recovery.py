@@ -69,16 +69,28 @@ def effective_loss(game, branch):
     table = hp_cost_table(game)
     if table is None:
         return branch['loss'] * boss_heal_weight(game)
-    return hp_cost(table, branch['loss'])
+    return hp_cost(table, branch['loss'], hp_death(game))
 
 
-def hp_cost(table, loss):
-    """Real cost of losing `loss` HP from a valid solver_hp_cost table."""
+def hp_death(game):
+    """solver_hp_death from the Mod's HpValue (the price of dying), or None when missing or malformed."""
+    death = game.get('solver_hp_death')
+    if not isinstance(death, (int, float)) or isinstance(death, bool) or death < 0:
+        return None
+    return death
+
+
+def hp_cost(table, loss, death=None):
+    """Real cost of losing `loss` HP from a valid solver_hp_cost table.
+
+    A curse's HP counts as HP lost and can push loss past current HP: the table extends by its last step, and a
+    won line never costs more than dying (`death`, V2). Without `death` (an older Mod) the extension is uncapped.
+    """
     if loss < len(table):
         return table[int(loss)]
-    # A curse's HP can push loss past current HP: extend with the table's last step.
     step = table[-1] - table[-2] if len(table) > 1 else 1
-    return table[-1] + (loss - (len(table) - 1)) * step
+    extended = table[-1] + (loss - (len(table) - 1)) * step
+    return extended if death is None else min(death, extended)
 
 
 def incense_targets(game):

@@ -7,7 +7,7 @@ import java.util.HashMap;
 import java.util.Map;
 
 /** docs/hp-value.md, chapter "药水的价值": the tier table, tier prices, stages and solver_potion_price (issue #101). */
-public final class PotionValueCheck {
+public final class HpPricesCheck {
     static void check(boolean ok, String what) {
         if (!ok) throw new AssertionError(what);
     }
@@ -63,7 +63,7 @@ public final class PotionValueCheck {
 
     /** Price of one potion exported at an act, room and map row. */
     static double price(int act, String room, int y, String id) {
-        JsonArray out = PotionValue.export(game("{\"act\":" + act + ",\"solver_auto_context\":{\"room\":\"" + room
+        JsonArray out = HpPrices.export(game("{\"act\":" + act + ",\"solver_auto_context\":{\"room\":\"" + room
             + "\",\"y\":" + y + "}," + potions(id) + "}"));
         return out.get(0).getAsDouble();
     }
@@ -75,9 +75,9 @@ public final class PotionValueCheck {
     }
 
     public static void main(String[] args) {
-        check(SPEC.length == 30 && PotionValue.TIERS.size() == 30, "table: 30 rows, got " + PotionValue.TIERS.size());
+        check(SPEC.length == 30 && HpPrices.TIERS.size() == 30, "table: 30 rows, got " + HpPrices.TIERS.size());
         for (String[] row : SPEC) {
-            int[] t = PotionValue.TIERS.get(row[0]);
+            int[] t = HpPrices.TIERS.get(row[0]);
             check(t != null, "table: missing " + row[0]);
             for (int s = 0; s < 5; s++)
                 check(t[s] == TIER.get(row[s + 1]), "table: " + row[0] + " column " + s + " expected " + row[s + 1] + ", got " + t[s]);
@@ -88,10 +88,10 @@ public final class PotionValueCheck {
         double[] early = {0, 2.1875, 4.375, 7, 9.625, 14};
         for (int i = 0; i < thresholds.length; i++) {
             for (int s = 0; s < 2; s++) {
-                double got = PotionValue.tierPrice(thresholds[i], s);
+                double got = HpPrices.tierPrice(thresholds[i], s);
                 check(near(got, early[i]), "tier price " + thresholds[i] + " stage " + s + ": expected " + early[i] + ", got " + got);
             }
-            double got = PotionValue.tierPrice(thresholds[i], 2);
+            double got = HpPrices.tierPrice(thresholds[i], 2);
             check(near(got, thresholds[i]), "tier price " + thresholds[i] + " stage 2: expected " + thresholds[i] + ", got " + got);
         }
         System.out.println("PASS: tier prices at the typical situation (stages 0-1: 0/2.188/4.375/7/9.625/14; stage 2: 0/5/10/16/22/32)");
@@ -102,17 +102,17 @@ public final class PotionValueCheck {
         HpValue.Context speed = new HpValue.Context(68, 20, new int[]{4, 4, 4, 4, 13}, true,
             new java.util.HashSet<>(java.util.Arrays.asList("Burning Blood")));
         double saved = HpValue.cost(24, 68, speed) - HpValue.cost(19, 68, speed);
-        check(saved == PotionValue.tierPrice(PotionValue.LOW, 0),
-            "threshold tie: cost saved " + saved + " must equal the 低 price " + PotionValue.tierPrice(PotionValue.LOW, 0));
+        check(saved == HpPrices.tierPrice(HpPrices.LOW, 0),
+            "threshold tie: cost saved " + saved + " must equal the 低 price " + HpPrices.tierPrice(HpPrices.LOW, 0));
         System.out.println("PASS: a saving exactly at the tier threshold is an exact tie with the price (no rounding)");
 
         double[] fire = {7, 4.375, 4.375, 0};
         for (int act = 1; act <= 4; act++) {
-            JsonArray out = PotionValue.export(game("{\"act\":" + act + "," + potions("Fire Potion") + "}"));
+            JsonArray out = HpPrices.export(game("{\"act\":" + act + "," + potions("Fire Potion") + "}"));
             check(out != null && out.size() == 1 && near(out.get(0).getAsDouble(), fire[act - 1]),
                 "Fire Potion act " + act + ": expected " + fire[act - 1] + ", got " + out);
-            JsonArray unknown = PotionValue.export(game("{\"act\":" + act + "," + potions("FocusPotion") + "}"));
-            double mid = PotionValue.tierPrice(10, act == 4 ? 2 : act == 1 ? 0 : 1);
+            JsonArray unknown = HpPrices.export(game("{\"act\":" + act + "," + potions("FocusPotion") + "}"));
+            double mid = HpPrices.tierPrice(10, act == 4 ? 2 : act == 1 ? 0 : 1);
             check(near(unknown.get(0).getAsDouble(), mid) && near(mid, act == 4 ? 10 : 4.375),
                 "unknown potion act " + act + " prices as 中: expected " + mid + ", got " + unknown);
         }
@@ -129,13 +129,13 @@ public final class PotionValueCheck {
         check(near(price(3, "MonsterRoom", 11, "FearPotion"), 4.375), "Fear act 3 row 11: stage tier 中 (4.375)");
         check(near(price(4, "MonsterRoomElite", 2, "FearPotion"), 10), "act 4 has no pre-Boss: Fear 中 (10)");
         check(near(price(1, "MonsterRoom", 12, "FocusPotion"), 4.375), "unknown potion before the Boss prices as 中");
-        JsonArray noRow = PotionValue.export(game("{\"act\":1,\"solver_auto_context\":{\"room\":\"MonsterRoom\"},"
+        JsonArray noRow = HpPrices.export(game("{\"act\":1,\"solver_auto_context\":{\"room\":\"MonsterRoom\"},"
             + potions("FearPotion") + "}"));
         check(near(noRow.get(0).getAsDouble(), 7), "without a map row the stage tier applies: " + noRow);
         System.out.println("PASS: pre-Boss tiers replace the stage tier on rows 12-14 of acts 1-3 (higher or lower), "
             + "not in the Boss room, not in act 4, not without a map row");
 
-        JsonArray slots = PotionValue.export(game("{\"act\":2," + potions("Potion Slot", "FairyPotion", "Swift Potion",
+        JsonArray slots = HpPrices.export(game("{\"act\":2," + potions("Potion Slot", "FairyPotion", "Swift Potion",
             "Fruit Juice", "SmokeBomb", "Weak Potion") + "}"));
         check(slots.size() == 6, "export: one entry per slot, got " + slots.size());
         check(slots.get(0).isJsonNull() && slots.get(1).isJsonNull() && slots.get(3).isJsonNull() && slots.get(4).isJsonNull(),
@@ -148,19 +148,19 @@ public final class PotionValueCheck {
             + "\"solver_auto_context\":{\"room\":\"MonsterRoomBoss\",\"y\":15},";
         JsonObject g = game("{" + boss + "\"relics\":[{\"id\":\"Burning Blood\"}]," + potions("BloodPotion") + "}");
         double expected = HpValue.cost(80 * 20 / 100, 60, HpValue.context(g));
-        double blood = PotionValue.export(g).get(0).getAsDouble();
+        double blood = HpPrices.export(g).get(0).getAsDouble();
         check(near(blood, expected) && near(blood, 4.0), "Blood Potion, act 1 Boss: heal 16 costs 4.0, got " + blood);
         JsonObject bark = game("{" + boss + "\"relics\":[{\"id\":\"Burning Blood\"},{\"id\":\"SacredBark\"}]," + potions("BloodPotion") + "}");
-        double barked = PotionValue.export(bark).get(0).getAsDouble();
+        double barked = HpPrices.export(bark).get(0).getAsDouble();
         check(near(barked, HpValue.cost(32, 60, HpValue.context(bark))) && near(barked, 8.0),
             "Blood Potion with SacredBark: heal 32 costs 8.0, got " + barked);
-        JsonArray noContext = PotionValue.export(game("{\"act\":1,\"max_hp\":80,\"current_hp\":60," + potions("BloodPotion", "Fire Potion") + "}"));
+        JsonArray noContext = HpPrices.export(game("{\"act\":1,\"max_hp\":80,\"current_hp\":60," + potions("BloodPotion", "Fire Potion") + "}"));
         check(noContext.get(0).isJsonNull() && near(noContext.get(1).getAsDouble(), 7),
             "Blood Potion without solver_auto_context is null, others still priced: " + noContext);
         System.out.println("PASS: Blood Potion is the real cost of its heal (16 -> 4.0, SacredBark 32 -> 8.0), null without auto context");
 
-        check(PotionValue.export(game("{" + potions("Fire Potion") + "}")) == null, "export: null without act");
-        check(PotionValue.export(game("{\"act\":1}")) == null, "export: null without potions");
+        check(HpPrices.export(game("{" + potions("Fire Potion") + "}")) == null, "export: null without act");
+        check(HpPrices.export(game("{\"act\":1}")) == null, "export: null without potions");
         System.out.println("PASS: solver_potion_price is omitted without act or potions");
 
         smokeAllowance();
@@ -174,7 +174,7 @@ public final class PotionValueCheck {
     /** Smallest loss whose real cost exceeds the escape cost: from here the probe's win no longer keeps the bomb. */
     static int escapeAt(JsonObject g) {
         JsonArray cost = HpValue.export(g);
-        double allowance = PotionValue.smokeAllowance(g);
+        double allowance = HpPrices.smokeAllowance(g);
         int k = 1;
         while (k < cost.size() && cost.get(k).getAsDouble() <= allowance) k++;
         return k;
@@ -183,27 +183,51 @@ public final class PotionValueCheck {
     /** docs/hp-value.md, 烟雾弹: the escape costs the bomb's tier (中) plus the forfeited reward (hallway 中, elite 很高). */
     static void smokeAllowance() {
         String bb = "{\"id\":\"Burning Blood\"}";
-        check(near(PotionValue.smokeAllowance(smokeGame(1, 80, 56, "MonsterRoom", bb, "SmokeBomb")), 8.75), "hallway: 中 + 中 = 8.75");
-        check(near(PotionValue.smokeAllowance(smokeGame(1, 80, 56, "EventRoom", bb, "SmokeBomb")), 8.75), "event fight prices as a hallway");
-        check(near(PotionValue.smokeAllowance(smokeGame(2, 80, 56, "MonsterRoomElite", bb, "Potion Slot", "SmokeBomb")), 18.375),
+        check(near(HpPrices.smokeAllowance(smokeGame(1, 80, 56, "MonsterRoom", bb, "SmokeBomb")), 8.75), "hallway: 中 + 中 = 8.75");
+        check(near(HpPrices.smokeAllowance(smokeGame(1, 80, 56, "EventRoom", bb, "SmokeBomb")), 8.75), "event fight prices as a hallway");
+        check(near(HpPrices.smokeAllowance(smokeGame(2, 80, 56, "MonsterRoomElite", bb, "Potion Slot", "SmokeBomb")), 18.375),
             "elite: 中 + 很高 = 18.375, any slot");
-        check(near(PotionValue.smokeAllowance(smokeGame(4, 80, 56, "MonsterRoomElite", bb, "SmokeBomb")), 42), "act 4 elite: 10 + 32");
-        check(PotionValue.smokeAllowance(smokeGame(1, 80, 56, "MonsterRoomBoss", bb, "SmokeBomb")) == null, "Boss room: null");
-        check(PotionValue.smokeAllowance(smokeGame(1, 80, 56, "MonsterRoom", bb, "GamblersBrew")) == null, "no Smoke Bomb: null");
-        check(PotionValue.smokeAllowance(game("{\"act\":1," + potions("SmokeBomb") + "}")) == null, "no auto context: null");
+        check(near(HpPrices.smokeAllowance(smokeGame(4, 80, 56, "MonsterRoomElite", bb, "SmokeBomb")), 42), "act 4 elite: 10 + 32");
+        check(HpPrices.smokeAllowance(smokeGame(1, 80, 56, "MonsterRoomBoss", bb, "SmokeBomb")) == null, "Boss room: null");
+        check(HpPrices.smokeAllowance(smokeGame(1, 80, 56, "MonsterRoom", bb, "GamblersBrew")) == null, "no Smoke Bomb: null");
+        check(HpPrices.smokeAllowance(game("{\"act\":1," + potions("SmokeBomb") + "}")) == null, "no auto context: null");
 
         // S1, the F6 Gremlin Nob of 2026-11-04: 80/82, Burning Blood, act 1 elite. Old rule escaped at 15.
         JsonObject nob = smokeGame(1, 82, 80, "MonsterRoomElite", bb, "SmokeBomb", "GamblersBrew");
-        check(HpValue.export(nob).get(20).getAsDouble() <= PotionValue.smokeAllowance(nob), "S1: a 20-HP win at 80/82 keeps the bomb");
+        check(HpValue.export(nob).get(20).getAsDouble() <= HpPrices.smokeAllowance(nob), "S1: a 20-HP win at 80/82 keeps the bomb");
         check(escapeAt(nob) == 46, "S1: escape only past 45 HP, got " + escapeAt(nob));
         // S3: 20/80, act 2 hallway, no healing relic: 15 HP is dearer than the escape.
         JsonObject low = smokeGame(2, 80, 20, "MonsterRoom", "", "SmokeBomb");
-        check(HpValue.export(low).get(15).getAsDouble() > PotionValue.smokeAllowance(low), "S3: 15 HP at 20/80 escapes");
+        check(HpValue.export(low).get(15).getAsDouble() > HpPrices.smokeAllowance(low), "S3: 15 HP at 20/80 escapes");
         check(escapeAt(low) == 8, "S3: escape from 8 HP, got " + escapeAt(low));
         // S4: same HP and loss (56/80, 25 HP costs 10.938): the elite keeps, the hallway escapes.
         check(escapeAt(smokeGame(1, 80, 56, "MonsterRoomElite", bb, "SmokeBomb")) > 25
             && escapeAt(smokeGame(1, 80, 56, "MonsterRoom", bb, "SmokeBomb")) <= 25, "S4: the forfeited elite reward is counted");
         System.out.println("PASS: solver_smoke_allowance = Smoke Bomb 中 + reward (hallway/event 中, elite 很高); null in a Boss room "
             + "or without a bomb; F6 Nob at 80/82 escapes only past 45 HP, 20/80 from 8");
+
+        rewards();
+    }
+
+    /** docs/hp-value.md, "奖励值多少血": event rewards in raw HP at the typical situation, summed and priced once. */
+    static void rewards() {
+        int[][] raw = {{HpPrices.RELIC, 32}, {HpPrices.BOOK, 22}, {HpPrices.COLORLESS_CARD, 10},
+            {HpPrices.WORTHY_UPGRADE, 16}, {HpPrices.OTHER_UPGRADE, 5}, {HpPrices.UNREAD_LIGHT, 22}, {HpPrices.GOLD_PER_HP, 10}};
+        for (int[] r : raw) check(r[0] == r[1], "reward table: expected " + r[1] + ", got " + r[0]);
+        for (int act = 1; act <= 4; act++) {
+            int s = HpPrices.stage(act);
+            check(HpPrices.reward().relics(1).price(act) == HpPrices.tierPrice(32, s), "relic = 32 HP, act " + act);
+            check(HpPrices.reward().books(1).price(act) == HpPrices.tierPrice(22, s), "book = 22 HP, act " + act);
+            check(HpPrices.reward().colorlessCards(2).price(act) == HpPrices.tierPrice(20, s), "two colorless cards = 20 HP");
+            check(HpPrices.reward().upgrades(1, 1).price(act) == HpPrices.tierPrice(21, s), "a worthy and another upgrade = 21 HP");
+            check(HpPrices.reward().unreadLight().price(act) == HpPrices.tierPrice(22, s), "unread light = 22 HP");
+            check(HpPrices.reward().gold(115).price(act) == HpPrices.tierPrice(11, s)
+                && HpPrices.reward().gold(119).price(act) == HpPrices.tierPrice(11, s), "gold: 10 per HP, rounded down");
+            check(HpPrices.reward().price(act) == 0.0, "nothing is worth 0");
+        }
+        check(near(HpPrices.reward().relics(1).price(2), 14) && near(HpPrices.reward().gold(90).price(2), 3.9375),
+            "act 2: a relic 14, 90 gold 3.9375");
+        System.out.println("PASS: event rewards (relic 32, book 22, colorless card 10, upgrades 16/5, unread light 22, 10 gold per HP)"
+            + " add up in raw HP and are priced once");
     }
 }

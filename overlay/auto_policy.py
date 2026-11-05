@@ -1,7 +1,7 @@
 """Explainable potion choice over replay-validated routes, never executable commands."""
 from collections import deque
 
-from recovery import boss_heal_weight, effective_loss, hp_cost, hp_cost_table
+from recovery import boss_heal_weight, effective_loss, hp_cost, hp_cost_table, hp_death
 
 
 def key(value):
@@ -115,7 +115,7 @@ def smoke_probe_keeps(plan, game):
 
 
 def potion_price_table(game):
-    """solver_potion_price from the Mod's PotionValue (docs/hp-value.md), or None when missing or malformed.
+    """solver_potion_price from the Mod's HpPrices (docs/hp-value.md), or None when missing or malformed.
 
     One entry per game['potions'] slot: a price in real HP, or None (empty slot, Fairy, Fruit Juice, Smoke Bomb).
     """
@@ -193,9 +193,14 @@ def recommend(game, branches):
                 total += 15 if top else 10 if valuable else 5
         return total
 
+    # A winning line consuming a revival is not equivalent to preserving it: a revival is priced as a death,
+    # HpValue's price when the Mod exports it (the same max HP + 20).
+    revival = hp_death(game)
+    if revival is None:
+        revival = game.get('max_hp', 80) + 20
+
     def score(b):
-        # A winning line consuming a revival is not equivalent to preserving it.
-        return effective_loss(game, b) + price(b) + (game.get('max_hp', 80) + 20) * (bool(b.get('used_tail')) + b.get('used_fairy', 0))
+        return effective_loss(game, b) + price(b) + revival * (bool(b.get('used_tail')) + b.get('used_fairy', 0))
 
     chosen = min(winners, key=lambda b: (score(b), b['loss'], len(b.get('potion_uses', []))))
     saved = round(baseline['loss'] - chosen['loss'], 1) if baseline else None

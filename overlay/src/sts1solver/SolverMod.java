@@ -402,11 +402,14 @@ public class SolverMod implements PostUpdateSubscriber, PostRenderSubscriber, Po
                 // HpValue (docs/hp-value.md); the backend keeps its old rule when this field is missing.
                 try { JsonArray cost=HpValue.export(game); if(cost!=null)game.add("solver_hp_cost",cost); }
                 catch(RuntimeException ignored) { }
-                // PotionValue (docs/hp-value.md, "药水的价值"): one price per potion slot, null where not priced.
-                try { JsonArray price=PotionValue.export(game); if(price!=null)game.add("solver_potion_price",price); }
+                // The price of dying: the cap past current HP and the price of a used revival.
+                try { Double death=HpValue.exportDeath(game); if(death!=null)game.addProperty("solver_hp_death",death); }
+                catch(RuntimeException ignored) { }
+                // HpPrices (docs/hp-value.md, "药水的价值"): one price per potion slot, null where not priced.
+                try { JsonArray price=HpPrices.export(game); if(price!=null)game.add("solver_potion_price",price); }
                 catch(RuntimeException ignored) { }
                 // Smoke Bomb escape cost in real HP; without it the backend keeps smokeLossThreshold.
-                try { Double smoke=PotionValue.smokeAllowance(game); if(smoke!=null)game.addProperty("solver_smoke_allowance",smoke); }
+                try { Double smoke=HpPrices.smokeAllowance(game); if(smoke!=null)game.addProperty("solver_smoke_allowance",smoke); }
                 catch(RuntimeException ignored) { }
             }
         }
