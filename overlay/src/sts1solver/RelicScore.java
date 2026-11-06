@@ -22,18 +22,18 @@ final class RelicScore {
     }
 
     static {
-        // Boss relics, straight from the community ranking of all 30 (rank 1 = 10 points, rank 30 = 1), with one fact
-        // check: Runic Dome only hides the intent icons, the data is still exported, so the solver sees everything.
-        put(10, "Pandora's Box");
-        put(9, "Runic Dome", "Runic Pyramid", "Astrolabe");
-        put(8, "Empty Cage");
-        put(7, "Snecko Eye", "Coffee Dripper");
-        put(6, "Calling Bell", "Black Star");
-        put(5, "SacredBark", "Cursed Key", "Philosopher's Stone");
-        put(4, "Tiny House", "SlaversCollar", "Fusion Hammer");
-        put(3, "Black Blood", "Velvet Choker", "Runic Cube");
-        put(2, "Mark of Pain");
-        put(1, "Sozu", "Busted Crown", "Ectoplasm");
+        // Boss relics: the author's tiers (pick within a tier by rank(), then by the network). Runic Dome only hides the
+        // intent icons, the data is still exported, so the solver sees everything. The deck-dependent ones (Fusion Hammer,
+        // Pandora's Box, Astrolabe, Mark of Pain, Runic Cube, Empty Cage) hold a default here; bossScore() is what counts.
+        put(10, "Runic Pyramid");
+        put(9, "Runic Dome");
+        put(8, "Coffee Dripper", "Cursed Key", "Empty Cage");
+        put(7, "Snecko Eye", "Philosopher's Stone", "Pandora's Box", "Astrolabe");
+        put(6, "SlaversCollar", "Calling Bell");
+        put(5, "Black Star", "SacredBark");
+        put(4, "Tiny House", "Black Blood", "Fusion Hammer", "Mark of Pain");
+        put(3, "Sozu", "Runic Cube");
+        put(1, "Velvet Choker", "Busted Crown", "Ectoplasm");
         // Common, uncommon, rare, shop and event relics (strong ones for a big Ironclad deck score high).
         put(9, "Lizard Tail", "TungstenRod", "Dead Branch", "Pen Nib", "Girya");
         put(8, "Torii", "Calipers", "Ginger", "Turnip", "Mango", "Peace Pipe", "Meat on the Bone", "Orichalcum", "Gambling Chip",
@@ -77,22 +77,63 @@ final class RelicScore {
 
     /** Boss-only adjustments use the current deck, never assumed future synergies. */
     static int bossScore(String id, JsonArray deck) {
-        if(!id.equals("Runic Cube") && !id.equals("Empty Cage"))return score(id);
-        int junk=0;
-        boolean selfDamage=false;
+        if(!id.equals("Runic Cube") && !id.equals("Empty Cage") && !id.equals("Fusion Hammer")
+                && !id.equals("Pandora's Box") && !id.equals("Astrolabe") && !id.equals("Mark of Pain"))return score(id);
+        int junk=0, basics=0, transformable=0;
+        boolean selfDamage=false, apotheosis=false, armaments=false, evolve=false;
         for(JsonElement item:deck) {
             JsonObject card=item.getAsJsonObject();
             String cardId=card.get("id").getAsString();
             String type=card.has("type")?card.get("type").getAsString():"";
-            if((type.equals("CURSE") && !EventRules.unremovable(cardId))
-                    || cardId.equals("Strike_R") || cardId.equals("Defend_R") || cardId.equals("Bash"))junk++;
+            boolean basic=cardId.equals("Strike_R") || cardId.equals("Defend_R");
+            if(basic)basics++;
+            if(basic || cardId.equals("Bash"))transformable++;
+            if((type.equals("CURSE") && !EventRules.unremovable(cardId)) || basic || cardId.equals("Bash"))junk++;
             selfDamage |= cardId.equals("Bloodletting") || cardId.equals("Offering")
                 || cardId.equals("Hemokinesis") || cardId.equals("Brutality")
                 || cardId.equals("Combust") || cardId.equals("Pain");
+            apotheosis |= cardId.equals("Apotheosis");
+            armaments |= cardId.equals("Armaments");
+            evolve |= cardId.equals("Evolve");
         }
         // ponytail: presence is a coarse synergy threshold; use trigger frequency if this proves too generous.
-        if(id.equals("Runic Cube"))return selfDamage?8:3;
-        return junk>=2?8:junk==1?6:2;
+        switch(id) {
+            case "Runic Cube": return selfDamage?8:3;
+            case "Fusion Hammer": return apotheosis?8:armaments?6:4;
+            case "Pandora's Box": return Math.min(7,Math.max(2,basics));
+            case "Astrolabe": return transformable>=3?7:6;
+            case "Mark of Pain": return evolve?5:4;
+            default: return junk>=2?8:junk==1?6:1;
+        }
+    }
+
+    private static final Map<String, Integer> RANKS = new HashMap<>();
+
+    private static void rank(int score, int rank, String... ids) {
+        for (String id : ids) RANKS.put(id+"@"+score, rank);
+    }
+
+    static {
+        // Order within a tier (1 = first); the same relic can sit in different tiers, so the score is part of the key.
+        rank(10, 1, "Runic Pyramid");
+        rank(9, 1, "Runic Dome");
+        rank(8, 1, "Fusion Hammer"); rank(8, 2, "Coffee Dripper"); rank(8, 3, "Cursed Key");
+        rank(8, 4, "Runic Cube"); rank(8, 5, "Empty Cage");
+        rank(7, 1, "Snecko Eye"); rank(7, 2, "Pandora's Box", "Astrolabe"); rank(7, 3, "Philosopher's Stone");
+        rank(6, 1, "SlaversCollar"); rank(6, 2, "Calling Bell"); rank(6, 3, "Fusion Hammer");
+        rank(6, 4, "Astrolabe"); rank(6, 5, "Empty Cage");
+        rank(5, 1, "Mark of Pain"); rank(5, 2, "Black Star"); rank(5, 3, "SacredBark");
+        rank(4, 1, "Tiny House"); rank(4, 2, "Black Blood"); rank(4, 3, "Fusion Hammer"); rank(4, 4, "Mark of Pain");
+        rank(3, 1, "Runic Cube"); rank(3, 2, "Sozu");
+        rank(2, 1, "Pandora's Box");
+        rank(1, 1, "Velvet Choker", "Busted Crown", "Ectoplasm", "Empty Cage");
+    }
+
+    /** Place of a boss relic within the tier of its bossScore (1 = first). Unlisted pairs, such as Pandora's Box at 3-6,
+     * come after every listed one; equal ranks are the network's call. */
+    static int rank(String id, int score) {
+        Integer value = RANKS.get(id+"@"+score);
+        return value == null ? Integer.MAX_VALUE : value;
     }
 
     /** True when the Sapphire Key is worth more than the relic it replaces. */

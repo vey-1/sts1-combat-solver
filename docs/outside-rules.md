@@ -218,39 +218,39 @@ Boss 遗物按手写评分强制选最高分，只有全部低于 2 分时才强
 
 | 场景 | 规则 | 条件与数值 | 代码 | 校对意见 |
 | --- | --- | --- | --- | --- |
-| Boss 遗物打分 | 强制 | 空鸟笼（Empty Cage）和符文立方体（Runic Cube）按当前牌组算分，其他查表，表中没有的记 5。 | OutsidePacket:260、RelicScore:79-96 |  |
-| 选择 | 强制 | 选分数最高的 Boss 遗物；同分时选网络分高的。 | OutsidePacket:261-271 |  |
-| 跳过 | 强制 | 最高分 < 2 且界面有跳过按钮时强制跳过。只有三个选项都是 1 分（添水、破碎金冠、灵体外质）时才会发生。没有跳过按钮时交给网络决定。 | OutsidePacket:307-315 |  |
+| Boss 遗物打分 | 强制 | 融合之锤（神化 8／武装 6／否则 4）、潘多拉的魔盒（min(7, max(2, 打击+防御张数))）、星盘（打击+防御+痛击 ≥ 3 张记 7，否则 6）、痛楚印记（进化 5，否则 4）、符文立方体（自伤牌 8，否则 3）、空鸟笼（垃圾牌 ≥ 2 记 8，1 张 6，0 张 1）按当前牌组算分，其他查表，表中没有的记 5。卡牌按游戏 id 计（Strike\_R、Defend\_R、Bash、Apotheosis、Armaments、Evolve）。 | OutsidePacket:372、RelicScore:79-108 |  |
+| 选择 | 强制 | 选分数最高的 Boss 遗物；同分时选档内名次靠前的（名次表见下方遗物表，按“遗物 + 当前分数”登记，同一遗物在不同分数下名次不同）；没登记的组合排在本档所有已登记者之后（如 3–6 分的潘多拉）；名次也相同（含都没登记，或 7 分的潘多拉与星盘这种有意并列）才选网络分高的。 | OutsidePacket:373-378、RelicScore:110-137 |  |
+| 跳过 | 强制 | 最高分 < 2 且界面有跳过按钮时强制跳过。只有三个选项都是 1 分（天鹅绒颈圈、破碎金冠、灵体外质，以及没有垃圾牌时的空鸟笼）时才会发生。没有跳过按钮时交给网络决定。 | OutsidePacket:380-385 |  |
 | 跳过后回到 Boss 宝箱 | 强制 | 宝箱类型为 BossChest 且已打开（chest_open）时选“离开宝箱”，不再打开。训练真值在跳过后把宝箱导出为未打开，这条看不到；由参考链记住本层已跳过，只要真值给出 Proceed 就离开，不再开箱。【W19b，新发现 1】 | OutsidePacket:332-339、reference\_chain.py:118-121、:195-200 |  |
-| 跳过后没有前进路径 | 强制 | 宿主在跳过后找不到 Proceed（旧真值构建跳过后只给“开箱”）时，再回到 Boss 遗物界面就不跳过，改拿评分最高的遗物（同分取网络分高的）。训练里由参考链记住本层已跳过，并以 boss\_skip\_exhausted 请求 OutsidePacket.bossSkipLeadsOn=false；客户端不会遇到。Boss 遗物里没有棱镜碎片，训练端仍有棱镜硬拒绝。【W19b，新发现 1】 | OutsidePacket:20、:307-311、ReferenceChain.java:25-27、reference\_chain.py:152-157、:205-207 |  |
+| 跳过后没有前进路径 | 强制 | 宿主在跳过后找不到 Proceed（旧真值构建跳过后只给“开箱”）时，再回到 Boss 遗物界面就不跳过，改拿评分最高的遗物（同分先看档内名次，再看网络分）。训练里由参考链记住本层已跳过，并以 boss\_skip\_exhausted 请求 OutsidePacket.bossSkipLeadsOn=false；客户端不会遇到。Boss 遗物里没有棱镜碎片，训练端仍有棱镜硬拒绝。【W19b，新发现 1】 | OutsidePacket:20、:380-382、ReferenceChain.java:25-27、reference\_chain.py:152-157、:205-207 |  |
 | 常量 NEUTRAL | 数值 | 5。表中没有的遗物记 5，商店加分以 5 为零点。 | RelicScore:12 |  |
 | 常量 SAPPHIRE\_KEY | 数值 | 6。蓝钥匙的估值，用于与关联遗物比较。 | RelicScore:14 |  |
 | 常量 SKIP\_BELOW | 数值 | 2。Boss 遗物最高分低于此值时跳过。 | RelicScore:16 |  |
 
 | 遗物 | 评分 | 随牌组调整 | 代码 | 校对意见 |
 | --- | --- | --- | --- | --- |
-| 潘多拉的魔盒（Pandora's Box） | 10 | 无 | RelicScore:27 |  |
-| 符文圆顶（Runic Dome） | 9 | 无 | RelicScore:28 |  |
-| 符文金字塔（Runic Pyramid） | 9 | 无 | RelicScore:28 |  |
-| 星盘（Astrolabe） | 9 | 无 | RelicScore:28 |  |
-| 空鸟笼（Empty Cage） | 8 | 仅 Boss 选择时随牌组：可移除诅咒与打击/防御/痛击合计 ≥ 2 张记 8，1 张记 6，0 张记 2。进阶之灾、铃铛的诅咒、死灵诅咒不计。 | RelicScore:29 |  |
-| 异蛇之眼（Snecko Eye） | 7 | 无 | RelicScore:30 |  |
-| 咖啡滤杯（Coffee Dripper） | 7 | 无 | RelicScore:30 |  |
-| 召唤铃铛（Calling Bell） | 6 | 无 | RelicScore:31 |  |
-| 黑星（Black Star） | 6 | 无 | RelicScore:31 |  |
-| 神圣树皮（SacredBark） | 5 | 无 | RelicScore:32 |  |
-| 诅咒钥匙（Cursed Key） | 5 | 无 | RelicScore:32 |  |
-| 贤者之石（Philosopher's Stone） | 5 | 无 | RelicScore:32 |  |
-| 小屋子（Tiny House） | 4 | 无 | RelicScore:33 |  |
-| 奴隶贩子颈环（SlaversCollar） | 4 | 无 | RelicScore:33 |  |
-| 融合之锤（Fusion Hammer） | 4 | 无 | RelicScore:33 |  |
-| 黑暗之血（Black Blood） | 3 | 无 | RelicScore:34 |  |
-| 天鹅绒颈圈（Velvet Choker） | 3 | 无 | RelicScore:34 |  |
-| 符文立方体（Runic Cube） | 3 | 仅 Boss 选择时随牌组：牌组含放血、祭品、御血术、残暴、自燃、疼痛任一张记 8，否则 3。 | RelicScore:34 |  |
-| 痛楚印记（Mark of Pain） | 2 | 无 | RelicScore:35 |  |
-| 添水（Sozu） | 1 | 无 | RelicScore:36 |  |
-| 破碎金冠（Busted Crown） | 1 | 无 | RelicScore:36 |  |
-| 灵体外质（Ectoplasm） | 1 | 无 | RelicScore:36 |  |
+| 符文金字塔（Runic Pyramid） | 10 | 无；名次 1 | RelicScore:28、:118 |  |
+| 符文圆顶（Runic Dome） | 9 | 无；名次 1 | RelicScore:29、:119 |  |
+| 咖啡滤杯（Coffee Dripper） | 8 | 无；名次 2 | RelicScore:30、:120 |  |
+| 诅咒钥匙（Cursed Key） | 8 | 无；名次 3 | RelicScore:30、:120 |  |
+| 空鸟笼（Empty Cage） | 表中 8，以 Boss 选择时的随牌组分为准 | 仅 Boss 选择时随牌组：可移除诅咒与打击/防御/痛击合计 ≥ 2 张记 8（名次 5），1 张记 6（名次 5），0 张记 1（名次 1）。进阶之灾、铃铛的诅咒、死灵诅咒不计。 | RelicScore:30、:106、:121、:124、:129 |  |
+| 异蛇之眼（Snecko Eye） | 7 | 无；名次 1 | RelicScore:31、:122 |  |
+| 贤者之石（Philosopher's Stone） | 7 | 无；名次 3 | RelicScore:31、:122 |  |
+| 潘多拉的魔盒（Pandora's Box） | 表中 7，以 Boss 选择时的随牌组分为准 | 仅 Boss 选择时随牌组：min(7, max(2, Strike\_R + Defend\_R 张数))。7 分名次 2（与星盘有意并列，交网络），2 分名次 1，3–6 分不登记（排本档最后）。 | RelicScore:31、:103、:122、:128 |  |
+| 星盘（Astrolabe） | 表中 7，以 Boss 选择时的随牌组分为准 | 仅 Boss 选择时随牌组：打击/防御/痛击（不含诅咒）≥ 3 张记 7（名次 2），否则 6（名次 4）。 | RelicScore:31、:104、:122、:124 |  |
+| 奴隶贩子颈环（SlaversCollar） | 6 | 无；名次 1 | RelicScore:32、:123 |  |
+| 召唤铃铛（Calling Bell） | 6 | 无；名次 2 | RelicScore:32、:123 |  |
+| 黑星（Black Star） | 5 | 无；名次 2 | RelicScore:33、:125 |  |
+| 神圣树皮（SacredBark） | 5 | 无；名次 3 | RelicScore:33、:125 |  |
+| 小屋子（Tiny House） | 4 | 无；名次 1 | RelicScore:34、:126 |  |
+| 黑暗之血（Black Blood） | 4 | 无；名次 2 | RelicScore:34、:126 |  |
+| 融合之锤（Fusion Hammer） | 表中 4，以 Boss 选择时的随牌组分为准 | 仅 Boss 选择时随牌组：牌组有神化记 8（名次 1），否则有武装记 6（名次 3），否则 4（名次 3）。 | RelicScore:34、:102、:120、:123、:126 |  |
+| 痛楚印记（Mark of Pain） | 表中 4，以 Boss 选择时的随牌组分为准 | 仅 Boss 选择时随牌组：牌组有进化记 5（名次 1），否则 4（名次 4）。 | RelicScore:34、:105、:125、:126 |  |
+| 符文立方体（Runic Cube） | 表中 3，以 Boss 选择时的随牌组分为准 | 仅 Boss 选择时随牌组：牌组含放血、祭品、御血术、残暴、自燃、疼痛任一张记 8（名次 4），否则 3（名次 1）。 | RelicScore:35、:101、:121、:127 |  |
+| 添水（Sozu） | 3 | 无；名次 2 | RelicScore:35、:127 |  |
+| 天鹅绒颈圈（Velvet Choker） | 1 | 无；名次 1（1 分档全部并列，交网络） | RelicScore:36、:129 |  |
+| 破碎金冠（Busted Crown） | 1 | 无；名次 1 | RelicScore:36、:129 |  |
+| 灵体外质（Ectoplasm） | 1 | 无；名次 1 | RelicScore:36、:129 |  |
 | 蜥蜴尾巴（Lizard Tail） | 9 | 无 | RelicScore:38 |  |
 | 钨合金棍（TungstenRod） | 9 | 无 | RelicScore:38 |  |
 | 枯木树枝（Dead Branch） | 9 | 无 | RelicScore:38 |  |

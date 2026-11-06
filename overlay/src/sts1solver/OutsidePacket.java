@@ -359,7 +359,7 @@ final class OutsidePacket {
 
     private String rewardRelicId(JsonObject reward) {return string(object(reward,"relic"),"id");}
 
-    /** Boss relic: highest hand-written score; skip only when every offer is worse than nothing. */
+    /** Boss relic: highest hand-written score, then rank within the tier, then the network; skip only when every offer is worse than nothing. */
     private Distill2.Result bossRule(Distill2.Result student) {
         JsonArray relics=array(object(game,"screen_state"),"relics");
         String[] ids=new String[choices.size()];
@@ -373,7 +373,9 @@ final class OutsidePacket {
         int best=-1;
         for(int i=0;i<ids.length;i++)
             if(!ids[i].isEmpty() && (best<0 || scores[i]>scores[best]
-                    || (scores[i]==scores[best] && student.scores[i]>student.scores[best])))best=i;
+                    || (scores[i]==scores[best] && (RelicScore.rank(ids[i],scores[i])<RelicScore.rank(ids[best],scores[best])
+                        || (RelicScore.rank(ids[i],scores[i])==RelicScore.rank(ids[best],scores[best])
+                            && student.scores[i]>student.scores[best])))))best=i;
         if(best<0)return null;
         if(scores[best]<RelicScore.SKIP_BELOW) {
             if(!bossSkipLeadsOn)

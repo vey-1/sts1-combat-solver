@@ -21,6 +21,30 @@ public final class OutsidePacketCheck {
         return same;
     }
 
+    /** A deck of copies of template with the given card ids. */
+    static JsonArray deckOf(JsonObject template, String... ids) {
+        JsonArray deck = new JsonArray();
+        for (String id : ids) {
+            JsonObject card = new JsonParser().parse(template.toString()).getAsJsonObject();
+            card.addProperty("id", id); card.addProperty("type", id.startsWith("Strike")?"ATTACK":"SKILL");
+            deck.add(card);
+        }
+        return deck;
+    }
+
+    /** The shipped boss pick (relic id) for this offer and deck, through OutsidePacket.build. */
+    static String bossPick(JsonObject state, JsonObject visible, JsonArray deck, String... ids) throws Exception {
+        JsonObject game = state.getAsJsonObject("game_state");
+        JsonArray relics = new JsonArray();
+        for (String id : ids) {
+            JsonObject relic = new JsonObject(); relic.addProperty("id", id); relic.addProperty("name", id);
+            relics.add(relic);
+        }
+        game.getAsJsonObject("screen_state").add("relics", relics);
+        game.add("deck", deck);
+        return ids[OutsidePacket.build(Distill2.load(), state, visible).policyScore().best];
+    }
+
     public static void main(String[] args) throws Exception {
         JsonObject state;
         try (InputStreamReader reader = new InputStreamReader(
@@ -289,9 +313,10 @@ public final class OutsidePacketCheck {
         visible.addProperty("screen_type","BOSS_REWARD");
         OutsidePacket boss = OutsidePacket.build(Distill2.load(),state,visible);
         if(boss.policyScore().best!=2)throw new AssertionError("Choose Cage over an unsupported Cube");
-        // Every offer below SKIP_BELOW (M1 seed 6074962807151633384, floor 17): skip in the game, best relic where skip loops.
+        // Every offer below SKIP_BELOW: skip in the game, best relic where skip loops. M1 seed 6074962807151633384 floor 17
+        // offered Ectoplasm/Busted Crown/Sozu; Sozu now scores 3, so Velvet Choker (1) stands in for it.
         JsonArray weakRelics = new JsonArray();
-        for(String id : new String[]{"Ectoplasm", "Busted Crown", "Sozu"}) {
+        for(String id : new String[]{"Ectoplasm", "Busted Crown", "Velvet Choker"}) {
             JsonObject relic = new JsonObject(); relic.addProperty("id",id); relic.addProperty("name",id);
             weakRelics.add(relic);
         }
@@ -337,7 +362,7 @@ public final class OutsidePacketCheck {
         JsonObject blood = new JsonParser().parse(plainDeck.get(0).toString()).getAsJsonObject();
         blood.addProperty("id","Bloodletting"); blood.addProperty("type","SKILL");
         JsonArray cleanDeck = new JsonArray(); cleanDeck.add(blood);
-        if(RelicScore.bossScore("Runic Cube",cleanDeck)!=8 || RelicScore.bossScore("Empty Cage",cleanDeck)!=2)
+        if(RelicScore.bossScore("Runic Cube",cleanDeck)!=8 || RelicScore.bossScore("Empty Cage",cleanDeck)!=1)
             throw new AssertionError("Existing self-damage earns Cube value; a clean deck lowers Cage value");
         if(RelicScore.score("StrikeDummy",cleanDeck)!=0 || RelicScore.score("StrikeDummy",plainDeck)!=3)
             throw new AssertionError("Strike Dummy must drop in value with zero/one strike");
@@ -345,6 +370,58 @@ public final class OutsidePacketCheck {
         pommel.addProperty("id","Pommel Strike"); cleanDeck.add(pommel);
         if(RelicScore.score("StrikeDummy",cleanDeck)!=3)
             throw new AssertionError("Pommel Strike still benefits from Strike Dummy");
+        // Deck-aware boss scores, then the shipped pick: score, rank within the tier, then the network.
+        String[] starter = {"Strike_R","Strike_R","Strike_R","Strike_R","Strike_R","Defend_R","Defend_R","Defend_R","Defend_R","Bash"};
+        JsonArray starterDeck = deckOf(blood, starter);
+        JsonArray sixBasics = deckOf(blood, "Strike_R","Strike_R","Strike_R","Defend_R","Defend_R","Defend_R");
+        JsonArray fiveBasics = deckOf(blood, "Strike_R","Strike_R","Strike_R","Defend_R","Defend_R");
+        JsonArray twoBasics = deckOf(blood, "Strike_R","Bash");
+        JsonArray junkOne = deckOf(blood, "Bash");
+        int hammer8 = RelicScore.bossScore("Fusion Hammer", deckOf(blood, "Apotheosis","Armaments"));
+        int hammer6 = RelicScore.bossScore("Fusion Hammer", deckOf(blood, "Armaments"));
+        int hammer4 = RelicScore.bossScore("Fusion Hammer", cleanDeck);
+        if(hammer8!=8 || hammer6!=6 || hammer4!=4)
+            throw new AssertionError("Fusion Hammer 8/6/4 by Apotheosis/Armaments: "+hammer8+"/"+hammer6+"/"+hammer4);
+        int pandora7 = RelicScore.bossScore("Pandora's Box", starterDeck), pandora5 = RelicScore.bossScore("Pandora's Box", fiveBasics);
+        int pandora2 = RelicScore.bossScore("Pandora's Box", twoBasics), pandora0 = RelicScore.bossScore("Pandora's Box", cleanDeck);
+        if(pandora7!=7 || pandora5!=5 || pandora2!=2 || pandora0!=2)
+            throw new AssertionError("Pandora's Box = min(7, max(2, Strike_R+Defend_R)): "+pandora7+"/"+pandora5+"/"+pandora2+"/"+pandora0);
+        if(RelicScore.bossScore("Astrolabe", deckOf(blood, "Strike_R","Defend_R","Bash"))!=7
+                || RelicScore.bossScore("Astrolabe", twoBasics)!=6)
+            throw new AssertionError("Astrolabe 7 with three Strike_R/Defend_R/Bash, else 6");
+        if(RelicScore.bossScore("Mark of Pain", deckOf(blood, "Evolve"))!=5 || RelicScore.bossScore("Mark of Pain", cleanDeck)!=4)
+            throw new AssertionError("Mark of Pain 5 with Evolve, else 4");
+        if(RelicScore.bossScore("Empty Cage", twoBasics)!=8 || RelicScore.bossScore("Empty Cage", junkOne)!=6
+                || RelicScore.bossScore("Empty Cage", deckOf(blood, "Bloodletting"))!=1)
+            throw new AssertionError("Empty Cage 8/6/1 by junk cards");
+        if(RelicScore.rank("Pandora's Box", 5)!=Integer.MAX_VALUE || RelicScore.rank("Fusion Hammer", 8)!=1
+                || RelicScore.rank("Fusion Hammer", 6)!=3 || RelicScore.rank("Fusion Hammer", 4)!=3)
+            throw new AssertionError("Ranks are keyed by relic and score; unlisted pairs come last");
+        JsonArray rankCommands = state.getAsJsonArray("available_commands");
+        state.add("available_commands", bossCommands);
+        try {
+            String pick = bossPick(state, visible, deckOf(blood, "Bloodletting"), "Coffee Dripper", "Cursed Key", "Runic Cube");
+            if(!pick.equals("Coffee Dripper"))throw new AssertionError("Tier 8: Coffee Dripper ranks over Cursed Key and a fed Cube, got "+pick);
+            pick = bossPick(state, visible, starterDeck, "Philosopher's Stone", "Astrolabe", "Snecko Eye");
+            if(!pick.equals("Snecko Eye"))throw new AssertionError("Tier 7: Snecko Eye ranks first, got "+pick);
+            pick = bossPick(state, visible, sixBasics, "Pandora's Box", "SlaversCollar", "Calling Bell");
+            if(!pick.equals("SlaversCollar"))
+                throw new AssertionError("Tier 6: an unranked Pandora's Box (6 basics) comes after Slaver's Collar, got "+pick);
+            JsonArray tie = new JsonArray();
+            for(String id : new String[]{"Pandora's Box", "Astrolabe", "Ectoplasm"}) {
+                JsonObject relic = new JsonObject(); relic.addProperty("id",id); relic.addProperty("name",id); tie.add(relic);
+            }
+            bossScreen.add("relics", tie); game.add("deck", starterDeck);
+            OutsidePacket tied = OutsidePacket.build(Distill2.load(), state, visible);
+            float[] net = tied.score().scores;
+            int expected = net[1]>net[0]?1:0;
+            if(tied.policyScore().best!=expected)
+                throw new AssertionError("Equal score and rank (Pandora's Box 7, Astrolabe 7) is the network's call");
+        } finally {
+            game.add("deck", plainDeck);
+            bossScreen.add("relics", bossRelics);
+            if(rankCommands==null)state.remove("available_commands"); else state.add("available_commands", rankCommands);
+        }
         JsonObject keyState = new JsonParser().parse(state.toString()).getAsJsonObject();
         JsonObject keyVisible = new JsonParser().parse(visible.toString()).getAsJsonObject();
         JsonObject keyGame = keyState.getAsJsonObject("game_state");
