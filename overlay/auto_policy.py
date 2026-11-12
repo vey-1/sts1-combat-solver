@@ -14,6 +14,13 @@ POTION_HEAL_PCT = {'BloodPotion': 20}  # % of max HP; Sacred Bark doubles it
 PREMIUM = {'Swift Potion', 'GamblersBrew', 'DistilledChaos', 'HeartOfIron', 'CultistPotion'}
 STRONG = PREMIUM | {'GhostInAJar', 'DuplicationPotion', 'Dexterity Potion', 'Strength Potion', 'PowerPotion',
                     'SkillPotion', 'AttackPotion', 'ColorlessPotion', 'EntropicBrew', 'SneckoOil'}
+STRONG_IN_ACT = {'Ancient Potion': {2}}  # strong only in these acts
+
+
+def potion_tier(potion, act):
+    """Which POTION_HP row prices this bottle."""
+    if potion in PREMIUM: return 'premium'
+    return 'strong' if potion in STRONG or act in STRONG_IN_ACT.get(potion, ()) else 'ordinary'
 
 
 def key(value):
@@ -131,12 +138,13 @@ def effective_loss(game, branch, profile):
     bottles = 0
     for use in branch.get('potion_uses', []):
         potion = potions[use['slot']]['id']
-        valuable = potion in STRONG or (potion == 'Ancient Potion' and game.get('act') == 2)
+        tier = potion_tier(potion, game.get('act'))
+        valuable = tier != 'ordinary'
         covers_gap = ((potion in {'Fire Potion', 'SteroidPotion', 'Energy Potion'} and '爆发不足' in profile['weaknesses'])
                       or (potion == 'Explosive Potion' and '群攻不足' in profile['weaknesses'])
                       or (potion in {'Block Potion', 'SpeedPotion'} and '防御不足' in profile['weaknesses']))
         reserve = profile['reserve'] and (valuable or covers_gap)
-        refill_hp, reserve_hp, keep_hp = POTION_HP['premium' if potion in PREMIUM else 'strong' if valuable else 'ordinary']
+        refill_hp, reserve_hp, keep_hp = POTION_HP[tier]
         # Full inventory discounts strong bottles too; otherwise it hoards
         # Strength/Dexterity even when the next drop is likely to be wasted.
         # A consumed bottle creates a real slot. A guaranteed refill lowers its
