@@ -68,7 +68,7 @@ depends on how much of the act is left (HP worth more when low, #101) needs them
 | `solver_auto_context.potion_drop_probability`, `.potion_reward_blocked` | `SolverMod.autoContext()` | read |
 | `solver_auto_context.room`, `.x`, `.y`, `.deck` | `SolverMod.autoContext()` | read (deck screen: reserve or not) |
 | `solver_auto_context.smoke_loss_threshold`, `.smoke_opening`, `.run_auto` | `SolverMod.autoContext()` | read |
-| `solver_auto_context.boss_candidates_remaining` | `SolverMod.autoContext()` | exported, not read (A20 act 3: is a second Boss still ahead) |
+| `solver_auto_context.boss_candidates_remaining` | `SolverMod.autoContext()` | exported, not read for pricing. Size of the game's Boss list, which drops the current Boss on entry: in act 3 it is 2 during the first Boss and 1 during the second, so `> 1` at A20 means a second Boss is still ahead (`SolverMod.bossFastFinish` already reads it this way) |
 | `solver_final_act` | `RecoveryExportPatch` | exported, not read (does act 3 lead into act 4) |
 
 A host that runs `auto_policy.py` without the Mod (an evaluation harness) has to supply the same fields with the same
