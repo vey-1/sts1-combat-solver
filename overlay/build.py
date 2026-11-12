@@ -53,6 +53,10 @@ def main():
                         '--release', '8', '-cp', classpath, '-d', str(classes), '@' + str(listing)], check=True)
         shutil.copy2(here / 'ModTheSpire.json', classes)
         shutil.copytree(here / 'resources', classes, dirs_exist_ok=True)
+        # The Java side reads the combat HP prices from this file; auto_policy.py is where they are set.
+        price_cases = staging / 'hp-price-cases.json'
+        subprocess.run([sys.executable, str(root / 'tools/export_hp_prices.py'), str(classes / 'hp-prices.json'),
+                        '--cases', str(price_cases)], check=True)
         licenses = classes / 'licenses'
         licenses.mkdir()
         shutil.copy2(root / 'references/CommunicationMod/LICENSE', licenses / 'CommunicationMod.txt')
@@ -86,11 +90,13 @@ def main():
                         str(here / 'test/ModeCheck.java'),
                         str(here / 'test/BattleHistoryCheck.java'), str(here / 'test/ShopHistoryCheck.java'),
                         str(here / 'test/SearchStatusCheck.java'),
-                        str(here / 'test/PanelBodyCheck.java')], check=True)
+                        str(here / 'test/PanelBodyCheck.java'),
+                        str(here / 'test/HpPricesCheck.java')], check=True)
         subprocess.run(['javac', '--release', '8', '-proc:none', '-encoding', 'UTF-8', '-cp',
                         os.pathsep.join((str(classes), classpath)), '-d', str(checks),
                         str(here / 'test/PotionRewardsCheck.java')], check=True)
         check_cp = os.pathsep.join((str(checks), str(classes), classpath))
+        subprocess.run(['java', '-Dfile.encoding=UTF-8', '-cp', check_cp, 'sts1solver.HpPricesCheck', str(price_cases)], check=True)
         subprocess.run(['java', '-Dfile.encoding=UTF-8', '-cp', check_cp,
                         'sts1solver.PotionRewardsCheck', str(here / 'test/distill2-shop-parity.json')], check=True)
         if not (args.bundled_windows or args.bundled):
